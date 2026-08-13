@@ -2575,3 +2575,622 @@ The user experience should make complicated infrastructure feel simple without s
 «Build the system so a user can describe what they want accomplished, while the platform safely plans, executes, verifies, and explains the underlying technical work.»
 
 This document is the initial source of truth. Future changes should be added deliberately rather than allowing individual implementation decisions to redefine the product architecture.
+
+---
+
+Layer Runners — Product Addendum
+
+Public Website, Project Blueprints & AI Orchestration
+
+Status: Addendum to the original Layer Runners design specification
+Domain: layerrunners.xyz
+
+---
+
+1. Important Product Direction Change
+
+Layer Runners is not simply a Telegram bot with integrations.
+
+The Telegram bot is the first conversational interface to a larger platform.
+
+The product being built is:
+
+«An AI-powered operational layer that understands a project and can plan, execute, verify, and explain work across its software stack.»
+
+The initial stack is:
+
+- GitHub
+- Supabase
+- Cloudflare
+- Telegram
+- Cloudflare AI
+
+Additional providers can be added later.
+
+---
+
+2. Public Website
+
+Layer Runners now requires a public-facing website at:
+
+layerrunners.xyz
+
+The website is the product's front door.
+
+Its primary purpose is to explain the product clearly and direct interested users toward the Telegram bot.
+
+The website should communicate:
+
+«Layer Runners
+Your AI operating layer for modern software.»
+
+Supporting message:
+
+«Tell Layer Runners what you want done. It plans the work, operates your stack, verifies the result, and tells you what happened.»
+
+2.1 Website structure
+
+The initial website should contain:
+
+Hero
+
+Explain Layer Runners in one glance.
+
+Primary CTA:
+
+Open Layer Runners on Telegram
+
+Secondary CTA:
+
+See how it works
+
+The Problem
+
+Show the fragmentation developers currently deal with:
+
+- GitHub
+- Cloudflare
+- Supabase
+- CI/CD
+- Logs
+- DNS
+- Monitoring
+- Payments
+
+Different dashboards.
+Different credentials.
+Different workflows.
+
+Then introduce Layer Runners as the operational layer connecting them.
+
+How It Works
+
+Visually communicate:
+
+You ask
+  ↓
+Layer Runners understands
+  ↓
+Creates a plan
+  ↓
+You approve sensitive actions
+  ↓
+Layer Runners executes
+  ↓
+Layer Runners verifies
+  ↓
+You get the result
+
+Example Requests
+
+Show realistic commands:
+
+- «Why did my last deployment fail?»
+- «Deploy the latest version to staging.»
+- «Show me production status.»
+- «Add a subscription field to users.»
+- «Investigate this incident.»
+
+This should demonstrate that Layer Runners is operational, not simply an AI chatbot.
+
+Integrations
+
+Initially highlight:
+
+GitHub · Supabase · Cloudflare
+
+Future integrations should be clearly labeled as future/planned rather than pretending they already exist.
+
+Telegram
+
+Make Telegram a major CTA.
+
+Example:
+
+«Your stack, in your pocket.
+Ask questions, investigate incidents, request operations, approve changes, and receive alerts directly through Telegram.»
+
+Button:
+
+Open Layer Runners
+
+The actual Telegram URL should be configured once the bot exists.
+
+Security
+
+Explain:
+
+- human approval for sensitive operations
+- project-scoped access
+- least privilege
+- secret protection
+- audit logs
+- verification after important actions
+
+Do not make claims that aren't actually implemented.
+
+---
+
+3. Project Blueprint
+
+Layer Runners needs a structured understanding of every project it operates.
+
+This should be called the:
+
+Project Blueprint
+
+The Blueprint is created through an adaptive onboarding questionnaire.
+
+The questionnaire should not be a giant static form.
+
+It should ask questions based on previous answers.
+
+For example:
+
+What are you building?
+
+- Web application
+- SaaS
+- API
+- E-commerce
+- Static website
+- Mobile backend
+- Other
+
+Selecting SaaS could reveal questions about:
+
+- authentication
+- database
+- payments
+- environments
+
+Selecting static website shouldn't ask unnecessary database questions.
+
+---
+
+4. The Questionnaire's Purpose
+
+The questionnaire isn't merely collecting onboarding information.
+
+It creates persistent context for the AI.
+
+The answers become the project's Blueprint.
+
+Conceptually:
+
+User
+  ↓
+Adaptive Questionnaire
+  ↓
+Project Blueprint
+  ↓
+AI Project Context
+
+This means the AI doesn't have to repeatedly ask:
+
+- «What's your repository?»
+- «Which database?»
+- «Where is production?»
+- «Which Cloudflare Worker?»
+
+It already knows.
+
+---
+
+5. Blueprint Example
+
+The questionnaire should eventually produce structured data similar to:
+
+```json
+{
+  "project": {
+    "name": "MyStore",
+    "type": "saas",
+    "description": "Subscription e-commerce platform"
+  },
+  "source": {
+    "provider": "github",
+    "repository": "company/mystore",
+    "branch": "main"
+  },
+  "database": {
+    "provider": "supabase",
+    "project": "mystore-prod"
+  },
+  "infrastructure": {
+    "provider": "cloudflare",
+    "type": "workers"
+  },
+  "environments": [
+    "development",
+    "staging",
+    "production"
+  ],
+  "services": [
+    "stripe"
+  ],
+  "management": {
+    "deployments": true,
+    "monitoring": true,
+    "database_migrations": true,
+    "alerts": true
+  }
+}
+```
+
+The schema can evolve.
+
+The important requirement is that the project context is structured and persistent.
+
+---
+
+6. Automatic Blueprint Discovery
+
+Eventually, users shouldn't even need to fill out the entire questionnaire.
+
+After connecting GitHub, a user could say:
+
+«Analyze my project.»
+
+Layer Runners can inspect the repository and propose a Blueprint.
+
+For example:
+
+«I found a Next.js application using Supabase and Stripe with Cloudflare deployment configuration.»
+
+Then:
+
+[Accept Blueprint] [Edit Blueprint]
+
+Any AI inference should be clearly distinguishable from verified information.
+
+---
+
+7. AI Architecture
+
+Cloudflare AI should be incorporated into the architecture, but it should not become a hard dependency throughout the entire application.
+
+Layer Runners should have an AI provider abstraction.
+
+Conceptually:
+
+Layer Runners AI
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+        Cloudflare AI        Other Models
+              │                   │
+              └─────────┬─────────┘
+                        │
+                 AI Orchestration
+
+Cloudflare AI can handle appropriate lightweight operations such as:
+
+- summarization
+- log summarization
+- classification
+- structured extraction
+- notifications
+- simple questions
+
+More complex reasoning can eventually be routed to other models.
+
+Do not hard-code the entire product around one model provider.
+
+---
+
+8. The Core Orchestration Loop
+
+This is the most important architecture in the entire product.
+
+Every meaningful request should conceptually follow:
+
+USER INTENT
+  ↓
+PROJECT CONTEXT
+  ↓
+UNDERSTAND
+  ↓
+PLAN
+  ↓
+POLICY / PERMISSION CHECK
+  ↓
+APPROVAL IF REQUIRED
+  ↓
+EXECUTE
+  ↓
+VERIFY
+  ↓
+REPORT
+  ↓
+AUDIT
+
+The AI should not simply generate instructions and hope somebody executes them.
+
+Layer Runners should actually coordinate the operation.
+
+---
+
+9. Plans
+
+For meaningful operations, Layer Runners should generate a structured plan.
+
+Example:
+
+Production Deployment
+
+1. Verify repository state
+2. Verify CI status
+3. Deploy Worker
+4. Run health checks
+5. Verify production version
+6. Monitor errors
+
+Risk: Medium
+
+[Approve]
+[Cancel]
+
+The user should understand what is about to happen before approving sensitive operations.
+
+---
+
+10. Execution
+
+Provider integrations should be modular.
+
+Conceptually:
+
+Executor
+├── GitHub Runner
+├── Supabase Runner
+└── Cloudflare Runner
+
+This is where the Layer Runners name becomes meaningful.
+
+The AI determines what needs to happen.
+
+The appropriate Runner performs the controlled operation.
+
+---
+
+11. Verification
+
+Execution isn't enough.
+
+Layer Runners needs to determine whether the operation actually worked.
+
+Example:
+
+Deployment complete.
+
+- ✓ Worker deployed
+- ✓ Correct version active
+- ✓ Health check passed
+- ✓ Database reachable
+- ✓ Error rate normal
+
+Deployment verified.
+
+If verification fails:
+
+Deployment completed, but verification failed.
+
+- Worker: ✓
+- Health check: ✕
+- Error rate: ↑
+
+Likely cause:
+Application error introduced by the latest deployment.
+
+[Investigate]
+[Rollback]
+
+The system must never claim success without evidence.
+
+---
+
+12. Telegram and Web Must Share the Same Brain
+
+This is critical.
+
+Do not build separate business logic for Telegram.
+
+Instead:
+
+Layer Runners Core
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+       Web App            Telegram
+
+Both interfaces should call the same:
+
+- project context
+- AI engine
+- planning system
+- policy engine
+- execution engine
+- verification system
+- notification system
+- audit system
+
+Telegram is simply another interface.
+
+---
+
+13. Initial Killer Workflows
+
+The MVP should focus on a few things and make them excellent.
+
+Deployment
+
+«Deploy the latest version to staging.»
+
+Investigation
+
+«Why did production break?»
+
+Database change
+
+«Add subscription_status to users.»
+
+Project setup
+
+«Set up this project.»
+
+Monitoring
+
+«What's happening with production?»
+
+Approval
+
+«Production deployment requested.»
+
+These workflows demonstrate the actual value of Layer Runners.
+
+---
+
+14. MVP Boundary
+
+Do not attempt to build the entire future vision immediately.
+
+The first goal is to prove:
+
+«A developer can connect their stack, tell Layer Runners what they want, and have Layer Runners safely accomplish it.»
+
+Initial focus:
+
+Public Website
+  ↓
+Telegram / Web App
+  ↓
+Project
+  ↓
+Blueprint
+  ↓
+GitHub
+Supabase
+Cloudflare
+  ↓
+AI
+  ↓
+Plan
+  ↓
+Approval
+  ↓
+Execution
+  ↓
+Verification
+
+Everything else is expansion.
+
+---
+
+15. The Long-Term Vision
+
+Eventually, the user should be able to say:
+
+«I want to launch an online store.»
+
+And Layer Runners could understand that this requires:
+
+- source control
+- application infrastructure
+- database
+- authentication
+- payments
+- domain
+- deployment
+- monitoring
+- environments
+- security
+
+Then produce:
+
+«I can set this up.
+Here's the architecture I recommend.
+Here's what I need from you.
+Here's what I can create.
+Here's what requires approval.»
+
+That is the ultimate product.
+
+Not:
+
+«Here's another dashboard.»
+
+But:
+
+«Tell us what you're trying to build. We'll handle the infrastructure.»
+
+---
+
+16. Codex Priority
+
+When implementing this addendum, Codex should prioritize:
+
+1. Public Layer Runners website
+2. Project model
+3. Adaptive Project Blueprint questionnaire
+4. Persistent Blueprint/context
+5. Integration framework
+6. GitHub integration
+7. Supabase integration
+8. Cloudflare integration
+9. AI orchestration
+10. Plans
+11. Approvals
+12. Execution
+13. Verification
+14. Telegram interface
+
+Do not build future integrations just because they appear in the vision.
+
+Build the smallest version that proves the orchestration loop.
+
+---
+
+17. Final Product Definition
+
+If Codex or a future developer gets confused about what Layer Runners actually is, return to this:
+
+«Layer Runners is an AI-powered operational layer for modern software. It gives developers and small businesses a single interface for understanding and operating their software stack. Users describe outcomes in natural language; Layer Runners uses Project Blueprint context to create plans, obtain required approvals, execute operations through controlled Runners, verify the results, and explain what happened.»
+
+Telegram is the first interface.
+
+The public website is the front door.
+
+The Project Blueprint is the persistent context.
+
+The AI is the reasoning layer.
+
+The Runners are the execution layer.
+
+The approval system keeps humans in control.
+
+Verification makes the system trustworthy.
+
+GitHub, Supabase, Cloudflare, and future integrations are the underlying machinery.
+
+And layerrunners.xyz is the home of the whole thing.
