@@ -18,3 +18,7 @@ interface DurableObjectStorage {
 interface DurableObjectState {
   storage: DurableObjectStorage;
 }
+
+interface Ai {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
+}

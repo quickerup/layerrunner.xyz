@@ -1,19 +1,16 @@
+import { Env } from './config';
+import { ApprovalStore } from './core/approval';
+import { UserLedger } from './core/metering';
 import { handleTelegramWebhook } from './telegram/webhook';
 import { Router } from 'itty-router';
-import { ApprovalStore } from './core/approval-store';
-import { UserLedger } from './core/metering';
-
-// Re-export Durable Object classes so Wrangler can register them
-export { ApprovalStore, UserLedger };
-
 
 const router = Router();
 
 // Telegram webhook endpoint
-router.post('/telegram/webhook', handleTelegramWebhook);
+router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramWebhook(request, env));
 
 // Initialize webhook (temporary - call once then remove)
-router.get('/init', async (request: Request, env: any) => {
+router.get('/init', async (request: Request, env: Env) => {
   try {
     const botToken = env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {
@@ -28,10 +25,10 @@ router.get('/init', async (request: Request, env: any) => {
     });
 
     const result = await response.json();
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: result.ok,
       webhook_url: webhookUrl,
-      telegram_response: result 
+      telegram_response: result
     }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), { status: 500 });
@@ -47,3 +44,6 @@ router.all('*', () => new Response('Not Found', { status: 404 }));
 export default {
   fetch: router.handle,
 };
+
+// Re-export Durable Object classes so Wrangler can register them
+export { ApprovalStore, UserLedger };

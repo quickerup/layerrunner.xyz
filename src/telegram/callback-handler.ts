@@ -1,5 +1,5 @@
 import { Env } from '../config';
-import { approveRequest, getApprovalRequest, rejectRequest } from '../core/approval-store';
+import { approveRequest, getApprovalRequest, rejectRequest } from '../core/approval';
 import { commitReservation, releaseReservation } from '../core/metering';
 import { ActionExecutor } from '../services/executor';
 import { answerCallbackQuery, sendTelegramMessage } from './api';

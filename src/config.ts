@@ -1,13 +1,4 @@
 /**
- * Environment Configuration
- * Load secrets from Cloudflare environment or .env files
- */
-
-declare global {
-  var TELEGRAM_BOT_TOKEN: string;
-}
-
-/**
  * Cloudflare Worker environment bindings.
  * Matches the bindings declared in wrangler.toml.
  */
@@ -33,15 +24,15 @@ export interface Env {
   TONCENTER_API_KEY?: string;
 }
 
-export function getEnv(key: string, defaultValue?: string): string {
-  const value = (globalThis as any)[key];
-  if (!value && !defaultValue) {
-    throw new Error(`Missing required environment variable: ${key}`);
+export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {
+  const value = env[key];
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
   }
-  return value || defaultValue || '';
-}
 
-export const config = {
-  telegramBotToken: getEnv('TELEGRAM_BOT_TOKEN'),
-  environment: getEnv('ENVIRONMENT', 'development'),
-};
+  if (defaultValue !== undefined) {
+    return defaultValue;
+  }
+
+  throw new Error(`Missing required environment binding: ${String(key)}`);
+}
