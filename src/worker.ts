@@ -1,16 +1,13 @@
-import { Env } from './config';
-import { ApprovalStore } from './core/approval';
-import { UserLedger } from './core/metering';
 import { handleTelegramWebhook } from './telegram/webhook';
 import { Router } from 'itty-router';
 
 const router = Router();
 
 // Telegram webhook endpoint
-router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramWebhook(request, env));
+router.post('/telegram/webhook', handleTelegramWebhook);
 
 // Initialize webhook (temporary - call once then remove)
-router.get('/init', async (request: Request, env: Env) => {
+router.get('/init', async (request: Request, env: any) => {
   try {
     const botToken = env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {
@@ -44,5 +41,3 @@ router.all('*', () => new Response('Not Found', { status: 404 }));
 export default {
   fetch: router.handle,
 };
-
-export { ApprovalStore, UserLedger };

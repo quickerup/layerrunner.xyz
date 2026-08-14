@@ -166,9 +166,10 @@ export default function Home() {
           <h2 id="telegram-heading">Your stack, in your pocket.</h2>
           <p>
             Ask questions, investigate incidents, request operations, approve changes,
-            and receive alerts directly through Telegram.
+            and receive alerts directly through Telegram. The Telegram URL will be
+            configured once the bot exists.
           </p>
-          <a className="button primary" href="https://t.me/layerrunnersbot">Open Layer Runners on Telegram</a>
+          <a className="button primary" href="#top">Open Layer Runners</a>
         </div>
         <div className="phone-card">
           <p>Production deployment requested.</p>

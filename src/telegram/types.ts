@@ -1,12 +1,11 @@
 /**
  * Telegram API Types
- * Minimal type definitions for message and callback handling
+ * Minimal type definitions for message handling
  */
 
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
-  callback_query?: TelegramCallbackQuery;
 }
 
 export interface TelegramMessage {
@@ -15,13 +14,6 @@ export interface TelegramMessage {
   chat: TelegramChat;
   from: TelegramUser;
   text?: string;
-}
-
-export interface TelegramCallbackQuery {
-  id: string;
-  from: TelegramUser;
-  message?: TelegramMessage;
-  data?: string;
 }
 
 export interface TelegramChat {
@@ -38,17 +30,9 @@ export interface TelegramUser {
   username?: string;
 }
 
-export interface TelegramInlineKeyboardButton {
-  text: string;
-  callback_data: string;
-}
-
 export interface TelegramSendMessageParams {
   chat_id: number;
   text: string;
   parse_mode?: 'Markdown' | 'MarkdownV2' | 'HTML';
   reply_to_message_id?: number;
-  reply_markup?: {
-    inline_keyboard: TelegramInlineKeyboardButton[][];
-  };
 }

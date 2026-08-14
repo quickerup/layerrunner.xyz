@@ -1,25 +1,23 @@
-import { Env } from '../config';
-import { handleCallbackQuery } from './callback-handler';
+import { TelegramUpdate, TelegramMessage } from './types';
 import { handleMessage } from './message-handler';
-import { TelegramMessage, TelegramUpdate } from './types';
 
-export async function handleTelegramWebhook(request: Request, env: Env): Promise<Response> {
+export async function handleTelegramWebhook(request: Request): Promise<Response> {
   try {
     const update: TelegramUpdate = await request.json();
-
-    if (update.callback_query) {
-      await handleCallbackQuery(env, update.callback_query);
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }
-
+    
+    // Only process messages
     if (!update.message) {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
 
     const message: TelegramMessage = update.message;
+    
+    // Process the message asynchronously
+    handleMessage(message).catch(error => {
+      console.error('Error handling message:', error);
+    });
 
-    await handleMessage(env, message);
-
+    // Return immediately to Telegram (required)
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   } catch (error) {
     console.error('Webhook error:', error);
