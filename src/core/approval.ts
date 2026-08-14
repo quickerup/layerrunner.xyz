@@ -68,6 +68,7 @@ export function getApprovalRequest(requestId: string): ApprovalRequest | undefin
   const request = approvalStore.get(requestId);
   
   if (request && request.expiresAt < Date.now()) {
+    // Known gap: expired requests are marked lazily here; no proactive user notification is sent yet.
     request.status = 'expired';
   }
   
