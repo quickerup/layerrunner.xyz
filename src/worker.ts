@@ -42,7 +42,7 @@ router.get('/health', () => new Response(JSON.stringify({ status: 'ok' }), { sta
 router.all('*', () => new Response('Not Found', { status: 404 }));
 
 export default {
-  fetch: router.handle,
+  fetch: router.fetch,
 };
 
 // Re-export Durable Object classes so Wrangler can register them
