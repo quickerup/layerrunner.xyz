@@ -8,7 +8,11 @@ import { beginOnboarding, formatCharacterSheet, handleOnboardingMessage, isStart
 import { createIntentProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
 import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
+import { escapeMarkdown } from '../core/markdown';
 import { TelegramMessage } from './types';
+
+const md = (value: unknown, fallback = 'unknown'): string =>
+  value === undefined || value === null || value === '' ? fallback : escapeMarkdown(String(value));
 
 export async function handleMessage(env: Env, message: TelegramMessage): Promise<void> {
   const { text, chat, from } = message;
@@ -134,12 +138,12 @@ async function executeAndFormat(env: Env, plan: ExecutionPlan, executableSteps: 
 function formatPlanResponse(plan: ExecutionPlan): string[] {
   const lines: string[] = [];
   lines.push(`*Intent*: ${plan.intent.type}`);
-  lines.push(`*Description*: ${plan.intent.description}`);
+  lines.push(`*Description*: ${escapeMarkdown(plan.intent.description)}`);
 
   if (plan.steps.length > 0) {
     lines.push('\n*Planned Actions*:');
     plan.steps.forEach((step, index) => {
-      lines.push(`${index + 1}. ${step.action}: ${step.description}`);
+      lines.push(`${index + 1}. ${step.action}: ${escapeMarkdown(step.description)}`);
     });
   }
 
@@ -160,24 +164,24 @@ function summarizePlan(plan: ExecutionPlan): string {
 
 export function formatExecutionResult(action: string, result: ExecutionResult): string {
   if (!result.success) {
-    return `❌ ${action} failed: ${result.error ?? 'Unknown error'}`;
+    return `❌ ${action} failed: ${md(result.error, 'Unknown error')}`;
   }
 
   if (action === 'github_list_repos' && Array.isArray(result.output)) {
-    const repos = result.output.slice(0, 10).map((repo: any) => `• ${repo.full_name ?? repo.name}`).join('\n');
+    const repos = result.output.slice(0, 10).map((repo: any) => `• ${md(repo.full_name ?? repo.name)}`).join('\n');
     return `✅ Repositories (${result.output.length})\n${repos || 'No repositories found.'}`;
   }
 
   if (action === 'github_create_repo') {
     const repo = result.output as any;
-    return `✅ Created repository ${repo.full_name ?? repo.name}`;
+    return `✅ Created repository ${md(repo.full_name ?? repo.name)}`;
   }
 
   if (action === 'github_get_repo') {
     const repo = result.output as any;
     const visibility = repo.private ? 'private' : 'public';
-    const description = repo.description ? `\n${repo.description}` : '';
-    return `✅ Repository ${repo.full_name ?? repo.name} (${visibility})${description}\nUpdated: ${repo.updated_at ?? 'unknown'}`;
+    const description = repo.description ? `\n${escapeMarkdown(repo.description)}` : '';
+    return `✅ Repository ${md(repo.full_name ?? repo.name)} (${visibility})${description}\nUpdated: ${md(repo.updated_at)}`;
   }
 
   if (action === 'github_get_workflow_runs' && Array.isArray(result.output)) {
@@ -186,7 +190,7 @@ export function formatExecutionResult(action: string, result: ExecutionResult): 
 
   if (action === 'github_deploy') {
     const deployment = result.output as any;
-    return `✅ Deployment workflow dispatched\nWorkflow: ${deployment.workflowId}\nRef: ${deployment.ref}\nEnvironment: ${deployment.inputs?.environment ?? 'unknown'}`;
+    return `✅ Deployment workflow dispatched\nWorkflow: ${md(deployment.workflowId)}\nRef: ${md(deployment.ref)}\nEnvironment: ${md(deployment.inputs?.environment)}`;
   }
 
   if ((action === 'project_status' || action === 'diagnose_deployment') && result.output) {
@@ -194,7 +198,7 @@ export function formatExecutionResult(action: string, result: ExecutionResult): 
   }
 
   if (action === 'github_get_deployments' && Array.isArray(result.output)) {
-    const deployments = result.output.slice(0, 5).map((deployment: any) => `• ${deployment.environment ?? 'unknown'} — ${deployment.sha ?? deployment.id}`).join('\n');
+    const deployments = result.output.slice(0, 5).map((deployment: any) => `• ${md(deployment.environment)} — ${md(deployment.sha ?? deployment.id)}`).join('\n');
     return `✅ Deployments (${result.output.length})\n${deployments || 'No deployments found.'}`;
   }
 
@@ -218,7 +222,7 @@ function formatHelpMessage(): string {
 }
 
 function formatWorkflowRuns(runs: any[]): string {
-  const rows = runs.slice(0, 5).map(run => `• ${run.name ?? 'Workflow'} — ${run.status ?? 'unknown'}${run.conclusion ? `/${run.conclusion}` : ''} on ${run.head_branch ?? 'unknown'} (${String(run.head_sha ?? '').slice(0, 7)})`);
+  const rows = runs.slice(0, 5).map(run => `• ${md(run.name, 'Workflow')} — ${md(run.status)}${run.conclusion ? `/${md(run.conclusion)}` : ''} on ${md(run.head_branch)} (${escapeMarkdown(String(run.head_sha ?? '').slice(0, 7))})`);
   return `✅ Recent workflow runs (${runs.length})\n${rows.join('\n') || 'No workflow runs found.'}`;
 }
 
@@ -230,25 +234,25 @@ function formatProjectStatus(output: any, diagnostic: boolean): string {
   const lines = [diagnostic ? '✅ Deployment diagnosis' : '✅ Project status'];
 
   if (repo) {
-    lines.push(`Repo: ${repo.full_name ?? repo.name} (${repo.default_branch ?? 'default branch unknown'})`);
-    lines.push(`Updated: ${repo.updated_at ?? 'unknown'}`);
+    lines.push(`Repo: ${md(repo.full_name ?? repo.name)} (${md(repo.default_branch, 'default branch unknown')})`);
+    lines.push(`Updated: ${md(repo.updated_at)}`);
   }
 
   if (latestRun) {
-    lines.push(`Latest CI: ${latestRun.name ?? 'Workflow'} — ${latestRun.status ?? 'unknown'}${latestRun.conclusion ? `/${latestRun.conclusion}` : ''}`);
+    lines.push(`Latest CI: ${md(latestRun.name, 'Workflow')} — ${md(latestRun.status)}${latestRun.conclusion ? `/${md(latestRun.conclusion)}` : ''}`);
     lines.push(`CI URL: ${latestRun.html_url}`);
   } else {
     lines.push('Latest CI: no workflow runs found');
   }
 
   if (latestDeployment) {
-    lines.push(`Latest deployment: ${latestDeployment.environment ?? 'unknown'} — ${latestDeployment.sha ?? latestDeployment.id}`);
+    lines.push(`Latest deployment: ${md(latestDeployment.environment)} — ${md(latestDeployment.sha ?? latestDeployment.id)}`);
   } else {
     lines.push('Latest deployment: no deployments found');
   }
 
   if (health?.configured) {
-    lines.push(`Health: ${health.ok ? 'healthy' : 'unhealthy'} (${health.status}) in ${health.responseTimeMs}ms`);
+    lines.push(`Health: ${health.ok ? 'healthy' : 'unhealthy'} (${md(health.status)}) in ${health.responseTimeMs}ms`);
   } else {
     lines.push('Health: APP_HEALTH_URL is not configured');
   }

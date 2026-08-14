@@ -4,6 +4,7 @@
  */
 
 import { Env } from '../config';
+import { escapeMarkdown } from './markdown';
 import { ExecutableAction } from './planner';
 
 export interface ApprovalRequest {
@@ -133,8 +134,8 @@ export function formatApprovalMessage(request: ApprovalRequest): string {
   const riskEmoji = { low: '🟢', medium: '🟡', high: '🔴' };
   const lines: string[] = [];
   lines.push(`${riskEmoji[request.riskLevel]} *Approval Required*`);
-  lines.push(`\n*Intent*: ${request.intent}`);
-  lines.push(`*Plan*: ${request.plan}`);
+  lines.push(`\n*Intent*: ${escapeMarkdown(request.intent)}`);
+  lines.push(`*Plan*: ${escapeMarkdown(request.plan)}`);
 
   if (request.meteringCostNano && BigInt(request.meteringCostNano) > BigInt(0)) {
     lines.push(`*Reserved fee*: ${formatJettonAmount(BigInt(request.meteringCostNano))} JETTON`);
@@ -142,7 +143,7 @@ export function formatApprovalMessage(request: ApprovalRequest): string {
 
   if (request.steps.length > 0) {
     lines.push(`\n*Steps*:`);
-    request.steps.forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+    request.steps.forEach((step, i) => lines.push(`${i + 1}. ${escapeMarkdown(step)}`));
   }
 
   lines.push(`\n*Request ID*: \`${request.id}\``);

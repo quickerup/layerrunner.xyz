@@ -1,4 +1,5 @@
 import { Env } from '../config';
+import { escapeMarkdown } from './markdown';
 import { ExecutionPlan } from './planner';
 import { formatLyr, buildDepositLink } from '../services/ton';
 
@@ -173,7 +174,7 @@ export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringRe
     `Needed:  ${formatLyr(metering.costNano)}`,
     `Shortfall: ${formatLyr(shortfall)}`,
     depositLink
-      ? `\nDeposit link:\n${depositLink}`
+      ? `\nDeposit link:\n${escapeMarkdown(depositLink)}`
       : '\nVault deposit address is not configured yet.',
   ].join('\n');
 }

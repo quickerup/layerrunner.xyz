@@ -15,6 +15,7 @@ import {
   saveUserProfile,
 } from '../core/profile';
 import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
+import { escapeMarkdown } from '../core/markdown';
 
 export function isStartCommand(text: string): boolean {
   return /^\s*\/start\b/.test(text);
@@ -147,8 +148,4 @@ function classButtons() {
     text: `${info.emoji} ${info.label}`,
     callback_data: `class:${key}`,
   }));
-}
-
-function escapeMarkdown(text: string): string {
-  return text.replace(/([_*[\]()`])/g, '\\$1');
 }
