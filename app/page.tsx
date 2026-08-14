@@ -1,3 +1,6 @@
+import Image from "next/image";
+import logo from "../assets/logo.png";
+
 const problemItems = [
   "GitHub",
   "Cloudflare",
@@ -41,7 +44,14 @@ export default function Home() {
     <main className="site-shell">
       <nav className="site-nav" aria-label="Primary navigation">
         <a className="brand" href="#top" aria-label="Layer Runners home">
-          <span className="brand-mark" aria-hidden="true">LR</span>
+          <Image
+            src={logo}
+            alt="Layer Runners logo"
+            width={56}
+            height={56}
+            priority
+            className="brand-logo"
+          />
           <span>Layer Runners</span>
         </a>
         <div className="nav-links">

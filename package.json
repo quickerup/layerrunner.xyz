@@ -4,18 +4,25 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:worker": "wrangler dev",
     "build": "next build",
+    "export": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy:worker": "wrangler deploy",
+    "deploy:pages": "npx wrangler pages deploy out --project-name layerrunner-xyz --branch main"
   },
   "dependencies": {
     "@types/node": "^22.13.1",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "itty-router": "^4.1.4",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "wrangler": "^4.22.0"
+  }
 }

@@ -1,0 +1,27 @@
+name = "layerrunner"
+main = "src/worker.ts"
+compatibility_date = "2025-01-15"
+workers_dev = true
+preview_urls = true
+
+# Routes for domain
+[[routes]]
+pattern = "layerrunners.xyz/telegram/webhook"
+zone_name = "layerrunners.xyz"
+
+[[routes]]
+pattern = "www.layerrunners.xyz/telegram/webhook"
+zone_name = "layerrunners.xyz"
+
+# Environment variables for different stages
+[env.production]
+name = "layerrunner-prod"
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+name = "layerrunner-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[env.development]
+name = "layerrunner-dev"
+vars = { ENVIRONMENT = "development" }
