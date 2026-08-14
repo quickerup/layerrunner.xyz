@@ -3,6 +3,8 @@
  * Handles approval workflow for sensitive operations
  */
 
+import { ExecutableAction } from './planner';
+
 export interface ApprovalRequest {
   id: string;
   userId: number;
@@ -14,6 +16,7 @@ export interface ApprovalRequest {
   status: 'pending' | 'approved' | 'rejected' | 'expired';
   createdAt: number;
   expiresAt: number;
+  executableSteps: ExecutableAction[];
 }
 
 export interface ApprovalResponse {
@@ -25,7 +28,8 @@ export interface ApprovalResponse {
 
 /**
  * In-memory approval store
- * In production, this should be persisted to a database (Supabase, D1, etc)
+ * This in-memory Map will not survive Worker isolate evictions or redeploys.
+ * Keep access behind this module's functions so it can be replaced with KV/D1 before production.
  */
 const approvalStore = new Map<string, ApprovalRequest>();
 
@@ -35,7 +39,8 @@ export function createApprovalRequest(
   intent: string,
   plan: string,
   steps: string[],
-  riskLevel: 'low' | 'medium' | 'high'
+  riskLevel: 'low' | 'medium' | 'high',
+  executableSteps: ExecutableAction[] = []
 ): ApprovalRequest {
   const id = generateRequestId();
   const now = Date.now();
@@ -52,6 +57,7 @@ export function createApprovalRequest(
     status: 'pending',
     createdAt: now,
     expiresAt,
+    executableSteps,
   };
   
   approvalStore.set(id, request);
@@ -116,5 +122,5 @@ export function formatApprovalMessage(request: ApprovalRequest): string {
 }
 
 function generateRequestId(): string {
-  return `approve_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return Math.random().toString(36).slice(2, 10);
 }

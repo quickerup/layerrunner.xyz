@@ -111,13 +111,3 @@ export class GitHubService {
   }
 }
 
-/**
- * Initialize GitHub service from environment
- */
-export function initGitHubService(): GitHubService {
-  const token = (globalThis as any).GITHUB_TOKEN;
-  if (!token) {
-    throw new Error('GITHUB_TOKEN environment variable is required');
-  }
-  return new GitHubService(token);
-}

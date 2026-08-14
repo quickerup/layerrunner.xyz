@@ -1,21 +1,26 @@
 /**
- * Environment Configuration
- * Load secrets from Cloudflare environment or .env files
+ * Cloudflare Worker environment bindings.
  */
 
-declare global {
-  var TELEGRAM_BOT_TOKEN: string;
+export interface Env {
+  TELEGRAM_BOT_TOKEN: string;
+  GITHUB_TOKEN: string;
+  GITHUB_OWNER: string;
+  ENVIRONMENT?: string;
+  AI?: {
+    run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 }
 
-export function getEnv(key: string, defaultValue?: string): string {
-  const value = (globalThis as any)[key];
-  if (!value && !defaultValue) {
-    throw new Error(`Missing required environment variable: ${key}`);
+export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {
+  const value = env[key];
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
   }
-  return value || defaultValue || '';
-}
 
-export const config = {
-  telegramBotToken: getEnv('TELEGRAM_BOT_TOKEN'),
-  environment: getEnv('ENVIRONMENT', 'development'),
-};
+  if (defaultValue !== undefined) {
+    return defaultValue;
+  }
+
+  throw new Error(`Missing required environment binding: ${String(key)}`);
+}
