@@ -1,0 +1,173 @@
+import { Env } from '../config';
+import { ExecutionPlan } from './planner';
+
+const NANO_FACTOR = BigInt(1_000_000_000);
+
+export const FEE_TABLE: Record<string, number> = {
+  help: 0,
+  clarify: 0,
+  project_status: 10_000_000,
+  github_get_repo: 10_000_000,
+  github_list_repos: 10_000_000,
+  github_get_workflow_runs: 20_000_000,
+  github_get_deployments: 10_000_000,
+  diagnose_deployment: 50_000_000,
+  github_create_repo: 250_000_000,
+  github_deploy: 500_000_000,
+};
+
+export interface MeteringResult {
+  ok: boolean;
+  costNano: bigint;
+  reservationId?: string;
+  balanceNano?: bigint;
+  reason?: 'insufficient_balance' | 'unpriced_action';
+}
+
+export class UserLedger {
+  constructor(private readonly state: DurableObjectState) {}
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === '/reserve' && request.method === 'POST') return this.reserve(request);
+    if (url.pathname === '/commit' && request.method === 'POST') return this.settleReservation(request, 'committed');
+    if (url.pathname === '/release' && request.method === 'POST') return this.settleReservation(request, 'released');
+    if (url.pathname === '/credit' && request.method === 'POST') return this.credit(request);
+    if (url.pathname === '/balance') return json(await this.snapshot());
+
+    return new Response('not found', { status: 404 });
+  }
+
+  private async reserve(request: Request): Promise<Response> {
+    const { costNano, reservationId = crypto.randomUUID() } = await request.json() as { costNano: string; reservationId?: string };
+    const cost = BigInt(costNano);
+    const account = await this.snapshot();
+
+    if (BigInt(account.balanceNano) < cost) {
+      return json({ balanceNano: account.balanceNano }, { status: 402 });
+    }
+
+    const reservations = await this.reservations();
+    if (reservations[reservationId]) return json({ reservationId });
+
+    reservations[reservationId] = { amountNano: cost.toString(), status: 'reserved', createdAt: Date.now() };
+    await this.state.storage.put({
+      balanceNano: (BigInt(account.balanceNano) - cost).toString(),
+      reservedNano: (BigInt(account.reservedNano) + cost).toString(),
+      reservations,
+    });
+
+    return json({ reservationId });
+  }
+
+  private async settleReservation(request: Request, status: 'committed' | 'released'): Promise<Response> {
+    const { reservationId } = await request.json() as { reservationId: string };
+    const reservations = await this.reservations();
+    const reservation = reservations[reservationId];
+    const account = await this.snapshot();
+
+    if (!reservation) return new Response('not found', { status: 404 });
+    if (reservation.status !== 'reserved') return json({ ok: true, alreadySettled: true });
+
+    const amount = BigInt(reservation.amountNano);
+    reservation.status = status;
+    reservation.settledAt = Date.now();
+
+    const balanceNano = status === 'released'
+      ? BigInt(account.balanceNano) + amount
+      : BigInt(account.balanceNano);
+
+    await this.state.storage.put({
+      balanceNano: balanceNano.toString(),
+      reservedNano: (BigInt(account.reservedNano) - amount).toString(),
+      spentNano: (BigInt(account.spentNano) + (status === 'committed' ? amount : BigInt(0))).toString(),
+      reservations,
+    });
+
+    return json({ ok: true });
+  }
+
+  private async credit(request: Request): Promise<Response> {
+    const { amountNano } = await request.json() as { amountNano: string };
+    const account = await this.snapshot();
+    await this.state.storage.put('balanceNano', (BigInt(account.balanceNano) + BigInt(amountNano)).toString());
+    return json({ ok: true });
+  }
+
+  private async snapshot(): Promise<{ balanceNano: string; reservedNano: string; spentNano: string }> {
+    return {
+      balanceNano: (await this.state.storage.get<string>('balanceNano')) ?? '0',
+      reservedNano: (await this.state.storage.get<string>('reservedNano')) ?? '0',
+      spentNano: (await this.state.storage.get<string>('spentNano')) ?? '0',
+    };
+  }
+
+  private async reservations(): Promise<Record<string, { amountNano: string; status: 'reserved' | 'committed' | 'released'; createdAt: number; settledAt?: number }>> {
+    return (await this.state.storage.get<Record<string, { amountNano: string; status: 'reserved' | 'committed' | 'released'; createdAt: number; settledAt?: number }>>('reservations')) ?? {};
+  }
+}
+
+export async function checkAndReserve(env: Env, userId: number, plan: ExecutionPlan): Promise<MeteringResult> {
+  const unpriced = plan.steps.find(step => !(step.action in FEE_TABLE));
+  if (unpriced) return { ok: false, costNano: BigInt(0), reason: 'unpriced_action' };
+
+  const totalCostNano = plan.steps.reduce((sum, step) => sum + BigInt(FEE_TABLE[step.action]), BigInt(0));
+  if (totalCostNano === BigInt(0)) return { ok: true, costNano: BigInt(0) };
+
+  const response = await ledgerStub(env, userId).fetch('https://ledger/reserve', {
+    method: 'POST',
+    body: JSON.stringify({ costNano: totalCostNano.toString() }),
+  });
+
+  if (response.status === 402) {
+    const body = await response.json() as { balanceNano: string };
+    return { ok: false, costNano: totalCostNano, balanceNano: BigInt(body.balanceNano), reason: 'insufficient_balance' };
+  }
+
+  if (!response.ok) throw new Error(`Ledger reserve failed: ${response.status}`);
+  const body = await response.json() as { reservationId: string };
+  return { ok: true, costNano: totalCostNano, reservationId: body.reservationId };
+}
+
+export async function commitReservation(env: Env, userId: number, reservationId?: string): Promise<void> {
+  if (!reservationId) return;
+  await settle(env, userId, reservationId, 'commit');
+}
+
+export async function releaseReservation(env: Env, userId: number, reservationId?: string): Promise<void> {
+  if (!reservationId) return;
+  await settle(env, userId, reservationId, 'release');
+}
+
+export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringResult): string {
+  if (metering.reason === 'unpriced_action') return '⚠️ This action is not priced yet, so I cannot run it safely.';
+  const balance = metering.balanceNano ?? BigInt(0);
+  const shortfall = metering.costNano > balance ? metering.costNano - balance : BigInt(0);
+  const address = env.VAULT_JETTON_WALLET;
+  const link = address ? `\nton://transfer/${address}?amount=${shortfall.toString()}&text=${encodeURIComponent(String(userId))}` : '';
+  return [`💎 *Top up required*`, `Balance: ${formatJettonAmount(balance)} JETTON`, `Needed: ${formatJettonAmount(metering.costNano)} JETTON`, `Shortfall: ${formatJettonAmount(shortfall)} JETTON`, link ? `\nDeposit link: ${link}` : '\nVault deposit address is not configured yet.'].join('\n');
+}
+
+function ledgerStub(env: Env, userId: number): DurableObjectStub {
+  const id = env.LEDGER.idFromName(String(userId));
+  return env.LEDGER.get(id);
+}
+
+async function settle(env: Env, userId: number, reservationId: string, action: 'commit' | 'release'): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch(`https://ledger/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ reservationId }),
+  });
+  if (!response.ok) throw new Error(`Ledger ${action} failed: ${response.status}`);
+}
+
+function formatJettonAmount(amountNano: bigint): string {
+  const units = amountNano / NANO_FACTOR;
+  const nanos = amountNano % NANO_FACTOR;
+  return `${units}.${nanos.toString().padStart(9, '0').replace(/0+$/, '').padEnd(2, '0')}`;
+}
+
+function json(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } });
+}

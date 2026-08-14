@@ -4,6 +4,18 @@ compatibility_date = "2025-01-15"
 workers_dev = true
 preview_urls = true
 
+[[durable_objects.bindings]]
+name = "APPROVALS"
+class_name = "ApprovalStore"
+
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "UserLedger"
+
+[[migrations]]
+tag = "v1-durable-approvals-ledger"
+new_sqlite_classes = ["ApprovalStore", "UserLedger"]
+
 [ai]
 binding = "AI"
 

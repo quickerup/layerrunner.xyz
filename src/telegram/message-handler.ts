@@ -1,5 +1,6 @@
 import { Env } from '../config';
 import { createApprovalRequest, formatApprovalMessage } from '../core/approval';
+import { checkAndReserve, commitReservation, formatTopUpPrompt, releaseReservation } from '../core/metering';
 import { parseIntent } from '../core/intent-parser';
 import { ExecutableAction, ExecutionPlan, generatePlan } from '../core/planner';
 import { createIntentProvider } from '../services/ai-provider';
@@ -24,15 +25,25 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    const metering = await checkAndReserve(env, from.id, plan);
+
+    if (!metering.ok) {
+      await sendTelegramMessage(env, chat.id, formatTopUpPrompt(env, from.id, metering));
+      return;
+    }
+
     if (plan.requiresApproval) {
-      const request = createApprovalRequest(
+      const request = await createApprovalRequest(
+        env,
         from.id,
         chat.id,
         intent.description,
         summarizePlan(plan),
         plan.steps.map(step => step.description),
         plan.riskLevel,
-        executableSteps
+        executableSteps,
+        metering.reservationId,
+        metering.costNano.toString()
       );
 
       await sendTelegramMessageWithButtons(env, chat.id, formatApprovalMessage(request), [[
@@ -42,8 +53,14 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
-    const response = await executeAndFormat(env, plan, executableSteps);
-    await sendTelegramMessage(env, chat.id, response);
+    try {
+      await commitReservation(env, from.id, metering.reservationId);
+      const response = await executeAndFormat(env, plan, executableSteps);
+      await sendTelegramMessage(env, chat.id, response);
+    } catch (error) {
+      await releaseReservation(env, from.id, metering.reservationId);
+      throw error;
+    }
   } catch (error) {
     console.error('Message handling error:', error);
     await sendTelegramMessage(
