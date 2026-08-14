@@ -1,6 +1,8 @@
 import { Env } from '../config';
 import { approveRequest, getApprovalRequest, rejectRequest } from '../core/approval';
 import { commitReservation, releaseReservation } from '../core/metering';
+import { CLASS_INFO, UserClass, getOnboardingState, getUserProfile } from '../core/profile';
+import { handleClassSelection } from './onboarding';
 import { ActionExecutor } from '../services/executor';
 import { answerCallbackQuery, sendTelegramMessage } from './api';
 import { formatExecutionResult } from './message-handler';
@@ -14,7 +16,23 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
-  const [action, requestId] = data.split(':');
+  const [action, param] = data.split(':');
+
+  if (action === 'class') {
+    const userId = callbackQuery.from.id;
+    const state = await getOnboardingState(env, userId);
+
+    if (!state || state.step !== 'class' || !(param in CLASS_INFO)) {
+      await answerCallbackQuery(env, callbackQuery.id, 'This setup step already passed.');
+      return;
+    }
+
+    await handleClassSelection(env, callbackQuery.message?.chat.id ?? userId, userId, param as UserClass, state);
+    await answerCallbackQuery(env, callbackQuery.id, 'Class selected.');
+    return;
+  }
+
+  const requestId = param;
   const request = await getApprovalRequest(env, requestId);
 
   if (!request || request.status !== 'pending') {
@@ -25,8 +43,12 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
-  if (callbackQuery.from.id !== request.userId) {
-    await answerCallbackQuery(env, callbackQuery.id, 'Only the requester can approve or reject this action.');
+  const isRequester = callbackQuery.from.id === request.userId;
+  const requesterProfile = isRequester ? undefined : await getUserProfile(env, callbackQuery.from.id);
+  const isReviewer = requesterProfile?.class === 'reviewer';
+
+  if (!isRequester && !isReviewer) {
+    await answerCallbackQuery(env, callbackQuery.id, 'Only the requester or a Reviewer can approve or reject this action.');
     return;
   }
 

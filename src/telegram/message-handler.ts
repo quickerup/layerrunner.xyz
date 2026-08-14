@@ -3,6 +3,8 @@ import { createApprovalRequest, formatApprovalMessage } from '../core/approval';
 import { checkAndReserve, commitReservation, formatTopUpPrompt, releaseReservation } from '../core/metering';
 import { parseIntent } from '../core/intent-parser';
 import { ExecutableAction, ExecutionPlan, generatePlan } from '../core/planner';
+import { CLASS_INFO, UserProfile, getOnboardingState, getUserProfile } from '../core/profile';
+import { beginOnboarding, formatCharacterSheet, handleOnboardingMessage, isStartCommand } from './onboarding';
 import { createIntentProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
 import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
@@ -16,12 +18,45 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
   }
 
   try {
+    const onboarding = await getOnboardingState(env, from.id);
+    if (onboarding) {
+      await handleOnboardingMessage(env, chat.id, from.id, text, onboarding);
+      return;
+    }
+
+    const profile = await getUserProfile(env, from.id);
+
+    if (!profile) {
+      if (isStartCommand(text)) {
+        await beginOnboarding(env, chat.id, from.id);
+      } else {
+        await sendTelegramMessage(env, chat.id, 'Send /start to set up your character first.');
+      }
+      return;
+    }
+
+    if (/^\s*\/profile\b/.test(text)) {
+      await sendTelegramMessage(env, chat.id, formatCharacterSheet(profile, false));
+      return;
+    }
+
     const intent = await parseIntent(text, createIntentProvider(env));
     const plan = generatePlan(intent);
     const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
 
+    for (const executable of executableSteps) {
+      if (!executable.params.repo && profile.defaultRepo) {
+        executable.params.repo = profile.defaultRepo;
+      }
+    }
+
     if (plan.steps.some(step => step.action === 'help')) {
       await sendTelegramMessage(env, chat.id, formatHelpMessage());
+      return;
+    }
+
+    if (plan.requiresApproval && profile.class !== 'deployer') {
+      await sendTelegramMessage(env, chat.id, formatPermissionDenied(profile));
       return;
     }
 
@@ -111,6 +146,14 @@ function formatPlanResponse(plan: ExecutionPlan): string[] {
   return lines;
 }
 
+function formatPermissionDenied(profile: UserProfile): string {
+  const info = CLASS_INFO[profile.class];
+  return [
+    `🔒 Your class (${info.emoji} ${info.label}) is read-only.`,
+    'Ask a Deployer to run this, or check `/profile` to confirm your class.',
+  ].join('\n');
+}
+
 function summarizePlan(plan: ExecutionPlan): string {
   return `${plan.steps.length} step(s), risk ${plan.riskLevel}, estimated ${plan.estimatedDuration}`;
 }
@@ -168,6 +211,7 @@ function formatHelpMessage(): string {
     '• `why did my last deployment fail?` — summarizes recent failed GitHub Actions/deployments',
     '• `deploy latest to staging` — asks for approval, then dispatches the configured GitHub workflow',
     '• `list GitHub repos` — lists accessible repositories for the configured owner',
+    '• `/profile` — see your character sheet (name, class, default repo)',
     '',
     'Required secrets/bindings: `TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUB_OWNER`, and `GITHUB_REPO`.',
   ].join('\n');

@@ -1,0 +1,72 @@
+/**
+ * User Profile ("character") storage
+ * Reuses the LEDGER durable object namespace, sharded by userId, since it
+ * already represents "this user's account" — profile and onboarding state
+ * are just additional facets of the same per-user object.
+ */
+
+import { Env } from '../config';
+
+export type UserClass = 'deployer' | 'watcher' | 'reviewer';
+
+export interface UserProfile {
+  userId: number;
+  displayName: string;
+  class: UserClass;
+  defaultRepo?: string;
+  createdAt: number;
+}
+
+export type OnboardingStep = 'name' | 'class' | 'repo';
+
+export interface OnboardingState {
+  step: OnboardingStep;
+  displayName?: string;
+  className?: UserClass;
+}
+
+export const CLASS_INFO: Record<UserClass, { label: string; emoji: string; blurb: string }> = {
+  deployer: { label: 'Deployer', emoji: '🛠️', blurb: 'Full access — can run and approve any action.' },
+  watcher: { label: 'Watcher', emoji: '👁️', blurb: 'Read-only — status, diagnostics, and lists. No deploys or writes.' },
+  reviewer: { label: 'Reviewer', emoji: '📋', blurb: "Read-only, plus can approve or reject other members' pending requests." },
+};
+
+export async function getUserProfile(env: Env, userId: number): Promise<UserProfile | undefined> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/profile');
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`Failed to load profile: ${response.status}`);
+  return response.json() as Promise<UserProfile>;
+}
+
+export async function saveUserProfile(env: Env, profile: UserProfile): Promise<void> {
+  const response = await ledgerStub(env, profile.userId).fetch('https://ledger/profile', {
+    method: 'POST',
+    body: JSON.stringify(profile),
+  });
+  if (!response.ok) throw new Error(`Failed to save profile: ${response.status}`);
+}
+
+export async function getOnboardingState(env: Env, userId: number): Promise<OnboardingState | undefined> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/onboarding');
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`Failed to load onboarding state: ${response.status}`);
+  return response.json() as Promise<OnboardingState>;
+}
+
+export async function saveOnboardingState(env: Env, userId: number, state: OnboardingState): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/onboarding', {
+    method: 'POST',
+    body: JSON.stringify(state),
+  });
+  if (!response.ok) throw new Error(`Failed to save onboarding state: ${response.status}`);
+}
+
+export async function clearOnboardingState(env: Env, userId: number): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/onboarding', { method: 'DELETE' });
+  if (!response.ok) throw new Error(`Failed to clear onboarding state: ${response.status}`);
+}
+
+function ledgerStub(env: Env, userId: number): DurableObjectStub {
+  const id = env.LEDGER.idFromName(String(userId));
+  return env.LEDGER.get(id);
+}

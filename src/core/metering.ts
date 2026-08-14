@@ -36,8 +36,28 @@ export class UserLedger {
     if (url.pathname === '/release' && request.method === 'POST') return this.settleReservation(request, 'released');
     if (url.pathname === '/credit' && request.method === 'POST') return this.credit(request);
     if (url.pathname === '/balance') return json(await this.snapshot());
+    if (url.pathname === '/profile' && request.method === 'GET') return this.getStored('profile');
+    if (url.pathname === '/profile' && request.method === 'POST') return this.setStored('profile', request);
+    if (url.pathname === '/onboarding' && request.method === 'GET') return this.getStored('onboarding');
+    if (url.pathname === '/onboarding' && request.method === 'POST') return this.setStored('onboarding', request);
+    if (url.pathname === '/onboarding' && request.method === 'DELETE') {
+      await this.state.storage.delete('onboarding');
+      return json({ ok: true });
+    }
 
     return new Response('not found', { status: 404 });
+  }
+
+  private async getStored(key: string): Promise<Response> {
+    const value = await this.state.storage.get(key);
+    if (value === undefined) return new Response('not found', { status: 404 });
+    return json(value);
+  }
+
+  private async setStored(key: string, request: Request): Promise<Response> {
+    const value = await request.json();
+    await this.state.storage.put(key, value);
+    return json({ ok: true });
   }
 
   private async reserve(request: Request): Promise<Response> {

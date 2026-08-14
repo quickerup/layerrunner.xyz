@@ -13,6 +13,7 @@ interface DurableObjectStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put<T = unknown>(key: string, value: T): Promise<void>;
   put<T = unknown>(entries: Record<string, T>): Promise<void>;
+  delete(key: string): Promise<boolean>;
 }
 
 interface DurableObjectState {
