@@ -60,6 +60,22 @@ function planStepsForIntent(intent: UserIntent): ExecutionStep[] {
 function handleQueryIntent(intent: UserIntent): ExecutionStep[] {
   const text = intent.description.toLowerCase();
 
+  if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
+    const repo = extractRepoName(intent.description);
+
+    if (!repo) {
+      return [repoClarificationStep()];
+    }
+
+    return [{
+      action: 'github_get_repo',
+      description: `Get GitHub repository details for ${repo}`,
+      service: 'github',
+      requiresApproval: false,
+      executable: { action: 'github_get_repo', params: { repo } },
+    }];
+  }
+
   if (mentionsGitHub(text) && /\b(repos?|repositories)\b/.test(text)) {
     return [{
       action: 'github_list_repos',
@@ -72,12 +88,17 @@ function handleQueryIntent(intent: UserIntent): ExecutionStep[] {
 
   if (mentionsGitHub(text) && /\bdeployments?\b/.test(text)) {
     const repo = extractRepoName(intent.description);
+
+    if (!repo) {
+      return [repoClarificationStep()];
+    }
+
     return [{
       action: 'github_get_deployments',
-      description: repo ? `Get recent GitHub deployments for ${repo}` : 'Get recent GitHub deployments',
+      description: `Get recent GitHub deployments for ${repo}`,
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'github_get_deployments', params: repo ? { repo } : {} },
+      executable: { action: 'github_get_deployments', params: { repo } },
     }];
   }
 
@@ -123,13 +144,31 @@ function handleDiagnosticIntent(intent: UserIntent): ExecutionStep[] {
   const text = intent.description.toLowerCase();
   const repo = extractRepoName(intent.description);
 
-  if (mentionsGitHub(text) && /\bdeployments?\b|\bdeploy(ed|ment)?\b/.test(text)) {
+  if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
+    if (!repo) {
+      return [repoClarificationStep()];
+    }
+
     return [{
-      action: 'github_get_deployments',
-      description: repo ? `Inspect recent GitHub deployments for ${repo}` : 'Inspect recent GitHub deployments',
+      action: 'github_get_repo',
+      description: `Inspect GitHub repository status for ${repo}`,
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'github_get_deployments', params: repo ? { repo } : {} },
+      executable: { action: 'github_get_repo', params: { repo } },
+    }];
+  }
+
+  if (mentionsGitHub(text) && /\bdeployments?\b|\bdeploy(ed|ment)?\b/.test(text)) {
+    if (!repo) {
+      return [repoClarificationStep()];
+    }
+
+    return [{
+      action: 'github_get_deployments',
+      description: `Inspect recent GitHub deployments for ${repo}`,
+      service: 'github',
+      requiresApproval: false,
+      executable: { action: 'github_get_deployments', params: { repo } },
     }];
   }
 
@@ -153,21 +192,69 @@ function mentionsGitHub(text: string): boolean {
   return /\b(github|repo|repos|repository|repositories|deployment|deployments)\b/.test(text);
 }
 
+function isRepoDetailQuery(text: string): boolean {
+  return /\b(status|details?|info|information|show|get|what'?s|what is)\b/.test(text)
+    && /\b(repo|repository)\b/.test(text)
+    && !/\b(repos|repositories)\b/.test(text);
+}
+
 function extractRepoName(input: string): string | undefined {
   const patterns = [
     /(?:called|named)\s+([a-zA-Z0-9._-]+)/i,
     /(?:repo|repository)\s+([a-zA-Z0-9._-]+)/i,
+    /(?:show|get|status of|details? (?:for|of)|info(?:rmation)? (?:for|about|on)|what'?s the status of|what is the status of)\s+(?:me\s+)?(?:my|the)?\s*([a-zA-Z0-9._-]+)\s+(?:repo|repository)\b/i,
+    /(?:status of|details? (?:for|of)|info(?:rmation)? (?:for|about|on)|what'?s the status of|what is the status of)\s+(?:my|the)?\s*([a-zA-Z0-9._-]+)/i,
     /(?:for|in)\s+([a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+|[a-zA-Z0-9._-]+)/i,
   ];
 
   for (const pattern of patterns) {
     const match = input.match(pattern);
     if (match?.[1]) {
-      return match[1].split('/').pop();
+      const candidate = match[1].split('/').pop();
+
+      if (candidate && isPlausibleRepoName(candidate)) {
+        return candidate;
+      }
     }
   }
 
   return undefined;
+}
+
+const REPO_NAME_DENYLIST = new Set([
+  'a',
+  'an',
+  'and',
+  'app',
+  'application',
+  'for',
+  'in',
+  'me',
+  'my',
+  'of',
+  'page',
+  'repo',
+  'repository',
+  'site',
+  'status',
+  'the',
+  'this',
+  'that',
+]);
+
+function isPlausibleRepoName(candidate: string): boolean {
+  const normalized = candidate.toLowerCase();
+
+  return /^[a-zA-Z0-9._-]{2,100}$/.test(candidate) && !REPO_NAME_DENYLIST.has(normalized);
+}
+
+function repoClarificationStep(): ExecutionStep {
+  return {
+    action: 'clarify',
+    description: "Couldn't identify a repository name. Please specify the exact GitHub repo name.",
+    service: 'chat',
+    requiresApproval: false,
+  };
 }
 
 function estimateDuration(steps: ExecutionStep[]): string {

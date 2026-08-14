@@ -53,6 +53,12 @@ async function executeAndFormat(env: Env, plan: ExecutionPlan, executableSteps: 
   const lines = formatPlanResponse(plan);
 
   if (executableSteps.length === 0) {
+    const clarification = plan.steps.find(step => step.action === 'clarify');
+    if (clarification) {
+      lines.push(`\n${clarification.description}`);
+      return lines.join('\n');
+    }
+
     lines.push('\n_No executable GitHub action was identified yet._');
     return lines.join('\n');
   }
@@ -100,6 +106,13 @@ export function formatExecutionResult(action: string, result: ExecutionResult): 
   if (action === 'github_create_repo') {
     const repo = result.output as any;
     return `✅ Created repository ${repo.full_name ?? repo.name}`;
+  }
+
+  if (action === 'github_get_repo') {
+    const repo = result.output as any;
+    const visibility = repo.private ? 'private' : 'public';
+    const description = repo.description ? `\n${repo.description}` : '';
+    return `✅ Repository ${repo.full_name ?? repo.name} (${visibility})${description}\nUpdated: ${repo.updated_at ?? 'unknown'}`;
   }
 
   if (action === 'github_get_deployments' && Array.isArray(result.output)) {
