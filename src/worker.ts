@@ -1,4 +1,6 @@
 import { Env } from './config';
+import { ApprovalStore } from './core/approval';
+import { UserLedger } from './core/metering';
 import { handleTelegramWebhook } from './telegram/webhook';
 import { Router } from 'itty-router';
 
@@ -42,3 +44,5 @@ router.all('*', () => new Response('Not Found', { status: 404 }));
 export default {
   fetch: router.handle,
 };
+
+export { ApprovalStore, UserLedger };

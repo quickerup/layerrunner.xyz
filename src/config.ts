@@ -3,6 +3,9 @@
  */
 
 export interface Env {
+  APPROVALS: DurableObjectNamespace;
+  LEDGER: DurableObjectNamespace;
+  VAULT_JETTON_WALLET?: string;
   TELEGRAM_BOT_TOKEN: string;
   GITHUB_TOKEN: string;
   GITHUB_OWNER: string;

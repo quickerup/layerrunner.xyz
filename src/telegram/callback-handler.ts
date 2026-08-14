@@ -1,5 +1,6 @@
 import { Env } from '../config';
 import { approveRequest, getApprovalRequest, rejectRequest } from '../core/approval';
+import { commitReservation, releaseReservation } from '../core/metering';
 import { ActionExecutor } from '../services/executor';
 import { answerCallbackQuery, sendTelegramMessage } from './api';
 import { formatExecutionResult } from './message-handler';
@@ -14,7 +15,7 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   }
 
   const [action, requestId] = data.split(':');
-  const request = getApprovalRequest(requestId);
+  const request = await getApprovalRequest(env, requestId);
 
   if (!request || request.status !== 'pending') {
     await answerCallbackQuery(env, callbackQuery.id, 'This approval request is no longer pending.');
@@ -30,7 +31,8 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   }
 
   if (action === 'reject') {
-    rejectRequest(requestId);
+    await rejectRequest(env, requestId);
+    await releaseReservation(env, request.userId, request.meteringReservationId);
     await answerCallbackQuery(env, callbackQuery.id, 'Rejected.');
     await sendTelegramMessage(env, request.chatId, `❌ Cancelled approval request \`${request.id}\`.`);
     return;
@@ -41,7 +43,7 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
-  if (!approveRequest(requestId)) {
+  if (!await approveRequest(env, requestId)) {
     await answerCallbackQuery(env, callbackQuery.id, 'Could not approve this request.');
     return;
   }
@@ -49,9 +51,12 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   await answerCallbackQuery(env, callbackQuery.id, 'Approved. Executing...');
 
   if (request.executableSteps.length === 0) {
+    await releaseReservation(env, request.userId, request.meteringReservationId);
     await sendTelegramMessage(env, request.chatId, `✅ Approved request \`${request.id}\`, but no executable action was available.`);
     return;
   }
+
+  await commitReservation(env, request.userId, request.meteringReservationId);
 
   const executor = new ActionExecutor(env);
   const lines = [`✅ Approved request \`${request.id}\`.`, '', '*Execution Result*:'];
