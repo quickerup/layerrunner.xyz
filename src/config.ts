@@ -6,6 +6,9 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GITHUB_TOKEN: string;
   GITHUB_OWNER: string;
+  GITHUB_REPO?: string;
+  GITHUB_DEPLOY_WORKFLOW?: string;
+  APP_HEALTH_URL?: string;
   ENVIRONMENT?: string;
   AI?: {
     run: (model: string, input: Record<string, unknown>) => Promise<unknown>;

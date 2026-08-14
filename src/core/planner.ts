@@ -40,6 +40,39 @@ export function generatePlan(intent: UserIntent): ExecutionPlan {
 }
 
 function planStepsForIntent(intent: UserIntent): ExecutionStep[] {
+  const text = intent.description.toLowerCase();
+
+  if (isHelpRequest(text)) {
+    return [{ action: 'help', description: 'Show supported Telegram bot commands', service: 'chat', requiresApproval: false }];
+  }
+
+  if (isStatusRequest(text)) {
+    return [{
+      action: 'project_status',
+      description: 'Check repository, CI, deployment, and application health',
+      service: 'github',
+      requiresApproval: false,
+      executable: { action: 'project_status', params: { repo: extractRepoName(intent.description) } },
+    }];
+  }
+
+  if (isDeployRequest(text)) {
+    return [{
+      action: 'github_deploy',
+      description: `Trigger the GitHub deployment workflow for ${extractEnvironment(text)}`,
+      service: 'github',
+      requiresApproval: true,
+      executable: {
+        action: 'github_deploy',
+        params: {
+          repo: extractRepoName(intent.description),
+          environment: extractEnvironment(text),
+          ref: extractRef(intent.description) ?? 'main',
+        },
+      },
+    }];
+  }
+
   switch (intent.type) {
     case 'query':
       return handleQueryIntent(intent);
@@ -48,66 +81,40 @@ function planStepsForIntent(intent: UserIntent): ExecutionStep[] {
     case 'diagnostic':
       return handleDiagnosticIntent(intent);
     default:
-      return [{
-        action: 'clarify',
-        description: 'Clarify user request',
-        service: 'chat',
-        requiresApproval: false,
-      }];
+      return [{ action: 'clarify', description: 'Clarify user request', service: 'chat', requiresApproval: false }];
   }
 }
 
 function handleQueryIntent(intent: UserIntent): ExecutionStep[] {
   const text = intent.description.toLowerCase();
 
-  if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
-    const repo = extractRepoName(intent.description);
-
-    if (!repo) {
-      return [repoClarificationStep()];
-    }
-
+  if (mentionsGitHub(text) && /\b(workflows?|actions?|ci|builds?|checks?)\b/.test(text)) {
     return [{
-      action: 'github_get_repo',
-      description: `Get GitHub repository details for ${repo}`,
+      action: 'github_get_workflow_runs',
+      description: 'Get recent GitHub Actions workflow runs',
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'github_get_repo', params: { repo } },
+      executable: { action: 'github_get_workflow_runs', params: { repo: extractRepoName(intent.description) } },
     }];
   }
 
+  if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
+    const repo = extractRepoName(intent.description);
+    if (!repo) return [repoClarificationStep()];
+    return [{ action: 'github_get_repo', description: `Get GitHub repository details for ${repo}`, service: 'github', requiresApproval: false, executable: { action: 'github_get_repo', params: { repo } } }];
+  }
+
   if (mentionsGitHub(text) && /\b(repos?|repositories)\b/.test(text)) {
-    return [{
-      action: 'github_list_repos',
-      description: 'List GitHub repositories',
-      service: 'github',
-      requiresApproval: false,
-      executable: { action: 'github_list_repos', params: {} },
-    }];
+    return [{ action: 'github_list_repos', description: 'List GitHub repositories', service: 'github', requiresApproval: false, executable: { action: 'github_list_repos', params: {} } }];
   }
 
   if (mentionsGitHub(text) && /\bdeployments?\b/.test(text)) {
     const repo = extractRepoName(intent.description);
-
-    if (!repo) {
-      return [repoClarificationStep()];
-    }
-
-    return [{
-      action: 'github_get_deployments',
-      description: `Get recent GitHub deployments for ${repo}`,
-      service: 'github',
-      requiresApproval: false,
-      executable: { action: 'github_get_deployments', params: { repo } },
-    }];
+    if (!repo) return [repoClarificationStep()];
+    return [{ action: 'github_get_deployments', description: `Get recent GitHub deployments for ${repo}`, service: 'github', requiresApproval: false, executable: { action: 'github_get_deployments', params: { repo } } }];
   }
 
-  return [{
-    action: 'fetch_data',
-    description: `Retrieve information: ${intent.description}`,
-    service: 'query_engine',
-    requiresApproval: false,
-  }];
+  return [{ action: 'fetch_data', description: `Retrieve information: ${intent.description}`, service: 'query_engine', requiresApproval: false }];
 }
 
 function handleActionIntent(intent: UserIntent): ExecutionStep[] {
@@ -115,81 +122,55 @@ function handleActionIntent(intent: UserIntent): ExecutionStep[] {
 
   if (mentionsGitHub(text) && /\b(create|add|make|new)\b/.test(text) && /\b(repo|repository)\b/.test(text)) {
     const name = extractRepoName(intent.description);
-    return [{
-      action: 'github_create_repo',
-      description: name ? `Create GitHub repository ${name}` : 'Create GitHub repository',
-      service: 'github',
-      requiresApproval: true,
-      executable: { action: 'github_create_repo', params: { name, private: false } },
-    }];
+    if (!name) return [{ action: 'clarify', description: 'Please provide a repository name to create.', service: 'chat', requiresApproval: false }];
+    return [{ action: 'github_create_repo', description: `Create GitHub repository ${name}`, service: 'github', requiresApproval: true, executable: { action: 'github_create_repo', params: { name, private: text.includes('private') } } }];
   }
 
-  return [
-    {
-      action: 'analyze',
-      description: `Analyze action request: ${intent.description}`,
-      service: 'planning_engine',
-      requiresApproval: false,
-    },
-    {
-      action: 'execute',
-      description: 'Execute action',
-      service: 'execution_engine',
-      requiresApproval: true,
-    },
-  ];
+  return [{ action: 'clarify', description: 'I can currently execute GitHub repo queries, CI/deployment status, and approved deploy workflow runs. Try “deploy latest to staging” or “show production status”.', service: 'chat', requiresApproval: false }];
 }
 
 function handleDiagnosticIntent(intent: UserIntent): ExecutionStep[] {
   const text = intent.description.toLowerCase();
-  const repo = extractRepoName(intent.description);
 
-  if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
-    if (!repo) {
-      return [repoClarificationStep()];
-    }
-
+  if (/\b(failed|failure|error|issue|problem|debug|investigate|why)\b/.test(text)) {
     return [{
-      action: 'github_get_repo',
-      description: `Inspect GitHub repository status for ${repo}`,
+      action: 'diagnose_deployment',
+      description: 'Inspect recent workflow runs and deployments for failures',
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'github_get_repo', params: { repo } },
+      executable: { action: 'diagnose_deployment', params: { repo: extractRepoName(intent.description) } },
     }];
   }
 
-  if (mentionsGitHub(text) && /\bdeployments?\b|\bdeploy(ed|ment)?\b/.test(text)) {
-    if (!repo) {
-      return [repoClarificationStep()];
-    }
+  return handleQueryIntent(intent);
+}
 
-    return [{
-      action: 'github_get_deployments',
-      description: `Inspect recent GitHub deployments for ${repo}`,
-      service: 'github',
-      requiresApproval: false,
-      executable: { action: 'github_get_deployments', params: { repo } },
-    }];
-  }
+function isHelpRequest(text: string): boolean {
+  return /^\s*\/(start|help)\b/.test(text) || /\b(help|what can you do|commands)\b/.test(text);
+}
 
-  return [
-    {
-      action: 'collect_logs',
-      description: 'Collect relevant logs and metrics',
-      service: 'observability',
-      requiresApproval: false,
-    },
-    {
-      action: 'analyze',
-      description: 'Analyze issues',
-      service: 'diagnostic_engine',
-      requiresApproval: false,
-    },
-  ];
+function isStatusRequest(text: string): boolean {
+  return /\b(status|health|production|staging|prod)\b/.test(text) && !/\b(repo|repository)\b/.test(text);
+}
+
+function isDeployRequest(text: string): boolean {
+  return /\b(deploy|release|ship)\b/.test(text);
+}
+
+function extractEnvironment(text: string): string {
+  if (/\bprod(uction)?\b/.test(text)) return 'production';
+  if (/\bstag(e|ing)?\b/.test(text)) return 'staging';
+  if (/\bdev(elopment)?\b/.test(text)) return 'development';
+  return 'staging';
+}
+
+function extractRef(input: string): string | undefined {
+  const match = input.match(/(?:ref|branch|tag|sha)\s+([a-zA-Z0-9._\/-]+)/i);
+  return match?.[1];
 }
 
 function mentionsGitHub(text: string): boolean {
-  return /\b(github|repo|repos|repository|repositories|deployment|deployments)\b/.test(text);
+  return /\b(github|repo|repos|repository|repositories|deployment|deployments|workflow|actions|ci)\b/.test(text);
 }
 
 function isRepoDetailQuery(text: string): boolean {
@@ -202,8 +183,6 @@ function extractRepoName(input: string): string | undefined {
   const patterns = [
     /(?:called|named)\s+([a-zA-Z0-9._-]+)/i,
     /(?:repo|repository)\s+([a-zA-Z0-9._-]+)/i,
-    /(?:show|get|status of|details? (?:for|of)|info(?:rmation)? (?:for|about|on)|what'?s the status of|what is the status of)\s+(?:me\s+)?(?:my|the)?\s*([a-zA-Z0-9._-]+)\s+(?:repo|repository)\b/i,
-    /(?:status of|details? (?:for|of)|info(?:rmation)? (?:for|about|on)|what'?s the status of|what is the status of)\s+(?:my|the)?\s*([a-zA-Z0-9._-]+)/i,
     /(?:for|in)\s+([a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+|[a-zA-Z0-9._-]+)/i,
   ];
 
@@ -211,63 +190,37 @@ function extractRepoName(input: string): string | undefined {
     const match = input.match(pattern);
     if (match?.[1]) {
       const candidate = match[1].split('/').pop();
-
-      if (candidate && isPlausibleRepoName(candidate)) {
-        return candidate;
-      }
+      if (candidate && isPlausibleRepoName(candidate)) return candidate;
     }
   }
 
   return undefined;
 }
 
-const REPO_NAME_DENYLIST = new Set([
-  'a',
-  'an',
-  'and',
-  'app',
-  'application',
-  'for',
-  'in',
-  'me',
-  'my',
-  'of',
-  'page',
-  'repo',
-  'repository',
-  'site',
-  'status',
-  'the',
-  'this',
-  'that',
-]);
+const REPO_NAME_DENYLIST = new Set(['a', 'an', 'and', 'app', 'application', 'for', 'in', 'latest', 'main', 'me', 'my', 'of', 'page', 'prod', 'production', 'repo', 'repository', 'site', 'staging', 'status', 'the', 'this', 'that']);
 
 function isPlausibleRepoName(candidate: string): boolean {
   const normalized = candidate.toLowerCase();
-
   return /^[a-zA-Z0-9._-]{2,100}$/.test(candidate) && !REPO_NAME_DENYLIST.has(normalized);
 }
 
 function repoClarificationStep(): ExecutionStep {
-  return {
-    action: 'clarify',
-    description: "Couldn't identify a repository name. Please specify the exact GitHub repo name.",
-    service: 'chat',
-    requiresApproval: false,
-  };
+  return { action: 'clarify', description: "Couldn't identify a repository name. Please specify the exact GitHub repo name.", service: 'chat', requiresApproval: false };
 }
 
 function estimateDuration(steps: ExecutionStep[]): string {
   if (steps.length === 0) return '< 1 second';
+  if (steps.some(step => step.action === 'github_deploy')) return '10-30 seconds to start, then CI continues in GitHub';
   if (steps.length <= 2) return '5-10 seconds';
   return '15-30 seconds';
 }
 
 function assessRisk(steps: ExecutionStep[]): 'low' | 'medium' | 'high' {
   const hasDelete = steps.some(s => /delete|remove/.test(s.action));
+  const hasDeploy = steps.some(s => /deploy/.test(s.action));
   const hasMutatingOps = steps.some(s => s.requiresApproval || /create|update|execute/.test(s.action));
 
   if (hasDelete) return 'high';
-  if (hasMutatingOps) return 'medium';
+  if (hasDeploy || hasMutatingOps) return 'medium';
   return 'low';
 }
