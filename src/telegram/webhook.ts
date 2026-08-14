@@ -8,9 +8,7 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
     const update: TelegramUpdate = await request.json();
 
     if (update.callback_query) {
-      handleCallbackQuery(env, update.callback_query).catch(error => {
-        console.error('Error handling callback query:', error);
-      });
+      await handleCallbackQuery(env, update.callback_query);
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
 
@@ -20,9 +18,7 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
 
     const message: TelegramMessage = update.message;
 
-    handleMessage(env, message).catch(error => {
-      console.error('Error handling message:', error);
-    });
+    await handleMessage(env, message);
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   } catch (error) {

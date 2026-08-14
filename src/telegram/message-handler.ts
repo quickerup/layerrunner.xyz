@@ -19,6 +19,11 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     const plan = generatePlan(intent);
     const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
 
+    if (plan.steps.some(step => step.action === 'help')) {
+      await sendTelegramMessage(env, chat.id, formatHelpMessage());
+      return;
+    }
+
     if (plan.requiresApproval) {
       const request = createApprovalRequest(
         from.id,
@@ -115,10 +120,77 @@ export function formatExecutionResult(action: string, result: ExecutionResult): 
     return `✅ Repository ${repo.full_name ?? repo.name} (${visibility})${description}\nUpdated: ${repo.updated_at ?? 'unknown'}`;
   }
 
+  if (action === 'github_get_workflow_runs' && Array.isArray(result.output)) {
+    return formatWorkflowRuns(result.output);
+  }
+
+  if (action === 'github_deploy') {
+    const deployment = result.output as any;
+    return `✅ Deployment workflow dispatched\nWorkflow: ${deployment.workflowId}\nRef: ${deployment.ref}\nEnvironment: ${deployment.inputs?.environment ?? 'unknown'}`;
+  }
+
+  if ((action === 'project_status' || action === 'diagnose_deployment') && result.output) {
+    return formatProjectStatus(result.output as any, action === 'diagnose_deployment');
+  }
+
   if (action === 'github_get_deployments' && Array.isArray(result.output)) {
     const deployments = result.output.slice(0, 5).map((deployment: any) => `• ${deployment.environment ?? 'unknown'} — ${deployment.sha ?? deployment.id}`).join('\n');
     return `✅ Deployments (${result.output.length})\n${deployments || 'No deployments found.'}`;
   }
 
   return `✅ ${action} succeeded in ${result.executionTime}ms`;
+}
+
+
+function formatHelpMessage(): string {
+  return [
+    '*Layer Runners is online.*',
+    '',
+    'Try:',
+    '• `show production status` — checks the configured repo, recent CI/deployments, and health URL',
+    '• `why did my last deployment fail?` — summarizes recent failed GitHub Actions/deployments',
+    '• `deploy latest to staging` — asks for approval, then dispatches the configured GitHub workflow',
+    '• `list GitHub repos` — lists accessible repositories for the configured owner',
+    '',
+    'Required secrets/bindings: `TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUB_OWNER`, and `GITHUB_REPO`.',
+  ].join('\n');
+}
+
+function formatWorkflowRuns(runs: any[]): string {
+  const rows = runs.slice(0, 5).map(run => `• ${run.name ?? 'Workflow'} — ${run.status ?? 'unknown'}${run.conclusion ? `/${run.conclusion}` : ''} on ${run.head_branch ?? 'unknown'} (${String(run.head_sha ?? '').slice(0, 7)})`);
+  return `✅ Recent workflow runs (${runs.length})\n${rows.join('\n') || 'No workflow runs found.'}`;
+}
+
+function formatProjectStatus(output: any, diagnostic: boolean): string {
+  const repo = output.repository;
+  const latestRun = output.workflowRuns?.[0];
+  const latestDeployment = output.deployments?.[0];
+  const health = output.health;
+  const lines = [diagnostic ? '✅ Deployment diagnosis' : '✅ Project status'];
+
+  if (repo) {
+    lines.push(`Repo: ${repo.full_name ?? repo.name} (${repo.default_branch ?? 'default branch unknown'})`);
+    lines.push(`Updated: ${repo.updated_at ?? 'unknown'}`);
+  }
+
+  if (latestRun) {
+    lines.push(`Latest CI: ${latestRun.name ?? 'Workflow'} — ${latestRun.status ?? 'unknown'}${latestRun.conclusion ? `/${latestRun.conclusion}` : ''}`);
+    lines.push(`CI URL: ${latestRun.html_url}`);
+  } else {
+    lines.push('Latest CI: no workflow runs found');
+  }
+
+  if (latestDeployment) {
+    lines.push(`Latest deployment: ${latestDeployment.environment ?? 'unknown'} — ${latestDeployment.sha ?? latestDeployment.id}`);
+  } else {
+    lines.push('Latest deployment: no deployments found');
+  }
+
+  if (health?.configured) {
+    lines.push(`Health: ${health.ok ? 'healthy' : 'unhealthy'} (${health.status}) in ${health.responseTimeMs}ms`);
+  } else {
+    lines.push('Health: APP_HEALTH_URL is not configured');
+  }
+
+  return lines.join('\n');
 }
