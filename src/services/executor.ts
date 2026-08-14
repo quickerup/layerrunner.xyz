@@ -3,8 +3,8 @@
  * Executes approved actions against integrated services
  */
 
-import { ExecutionPlan } from '../core/planner';
-import { initGitHubService } from './github';
+import { Env } from '../config';
+import { GitHubService } from './github';
 
 export interface ExecutionResult {
   success: boolean;
@@ -14,6 +14,7 @@ export interface ExecutionResult {
 }
 
 export class ActionExecutor {
+  constructor(private readonly env: Env) {}
   async executeAction(
     action: string,
     params: Record<string, any>
@@ -56,8 +57,8 @@ export class ActionExecutor {
   }
 
   private async createGitHubRepo(params: Record<string, any>) {
-    const github = initGitHubService();
-    const owner = params.owner || (globalThis as any).GITHUB_OWNER;
+    const github = this.initGitHubService();
+    const owner = params.owner || this.env.GITHUB_OWNER;
     
     if (!owner) {
       throw new Error('GitHub owner not configured');
@@ -72,8 +73,8 @@ export class ActionExecutor {
   }
 
   private async listGitHubRepos(params: Record<string, any>) {
-    const github = initGitHubService();
-    const owner = params.owner || (globalThis as any).GITHUB_OWNER;
+    const github = this.initGitHubService();
+    const owner = params.owner || this.env.GITHUB_OWNER;
     
     if (!owner) {
       throw new Error('GitHub owner not configured');
@@ -83,8 +84,8 @@ export class ActionExecutor {
   }
 
   private async getGitHubRepo(params: Record<string, any>) {
-    const github = initGitHubService();
-    const owner = params.owner || (globalThis as any).GITHUB_OWNER;
+    const github = this.initGitHubService();
+    const owner = params.owner || this.env.GITHUB_OWNER;
     const repo = params.repo;
     
     if (!owner || !repo) {
@@ -95,8 +96,8 @@ export class ActionExecutor {
   }
 
   private async getGitHubDeployments(params: Record<string, any>) {
-    const github = initGitHubService();
-    const owner = params.owner || (globalThis as any).GITHUB_OWNER;
+    const github = this.initGitHubService();
+    const owner = params.owner || this.env.GITHUB_OWNER;
     const repo = params.repo;
     
     if (!owner || !repo) {
@@ -104,5 +105,12 @@ export class ActionExecutor {
     }
 
     return github.getDeployments(owner, repo);
+  }
+
+  private initGitHubService(): GitHubService {
+    if (!this.env.GITHUB_TOKEN) {
+      throw new Error('GITHUB_TOKEN environment binding is required');
+    }
+    return new GitHubService(this.env.GITHUB_TOKEN);
   }
 }

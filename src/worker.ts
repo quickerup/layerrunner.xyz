@@ -1,13 +1,14 @@
+import { Env } from './config';
 import { handleTelegramWebhook } from './telegram/webhook';
 import { Router } from 'itty-router';
 
 const router = Router();
 
 // Telegram webhook endpoint
-router.post('/telegram/webhook', handleTelegramWebhook);
+router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramWebhook(request, env));
 
 // Initialize webhook (temporary - call once then remove)
-router.get('/init', async (request: Request, env: any) => {
+router.get('/init', async (request: Request, env: Env) => {
   try {
     const botToken = env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {

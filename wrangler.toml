@@ -4,6 +4,9 @@ compatibility_date = "2025-01-15"
 workers_dev = true
 preview_urls = true
 
+[ai]
+binding = "AI"
+
 # Routes for domain
 [[routes]]
 pattern = "layerrunners.xyz/telegram/webhook"
@@ -18,10 +21,19 @@ zone_name = "layerrunners.xyz"
 name = "layerrunner-prod"
 vars = { ENVIRONMENT = "production" }
 
+[env.production.ai]
+binding = "AI"
+
 [env.staging]
 name = "layerrunner-staging"
 vars = { ENVIRONMENT = "staging" }
 
+[env.staging.ai]
+binding = "AI"
+
 [env.development]
 name = "layerrunner-dev"
 vars = { ENVIRONMENT = "development" }
+
+[env.development.ai]
+binding = "AI"
