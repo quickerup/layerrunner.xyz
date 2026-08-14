@@ -16,6 +16,11 @@ Create a `.env.local` file or set in your Cloudflare Worker secrets:
 ```bash
 # Telegram Bot Token
 TELEGRAM_BOT_TOKEN=your_bot_token_here
+GITHUB_TOKEN=github_pat_with_repo_and_actions_workflow_scope
+GITHUB_OWNER=your_github_owner_or_org
+GITHUB_REPO=your_default_repo
+GITHUB_DEPLOY_WORKFLOW=deploy.yml
+APP_HEALTH_URL=https://your-app.example.com/health
 ```
 
 ### 3. Set Webhook
@@ -30,7 +35,7 @@ curl -X POST https://api.telegram.org/bot{YOUR_BOT_TOKEN}/setWebhook \
 
 ### 4. Verify Setup
 
-Send a test message to your bot on Telegram. It should respond with an intent analysis and execution plan.
+Send `/start` to your bot on Telegram. It should return supported commands. Then try `show production status` or `deploy latest to staging`.
 
 ## Architecture
 
@@ -54,15 +59,19 @@ Send a test message to your bot on Telegram. It should respond with an intent an
 - "Create a new GitHub repository called MyProject"
 - "Add a Stripe subscription field to the users table"
 
-## Next Steps
+## Implemented Bot Actions
 
-1. Implement actual service integrations (GitHub API, Supabase, Cloudflare API)
-2. Add approval workflow for sensitive operations
-3. Build action execution engine
-4. Add persistent state/database for conversations
-5. Implement Telegram keyboard shortcuts and inline buttons
-6. Add rich message formatting
-7. Set up audit logging
+- `/start` and `/help` show supported commands and required configuration.
+- `show production status` checks the configured GitHub repository, recent Actions runs, deployments, and optional `APP_HEALTH_URL`.
+- `why did my last deployment fail?` summarizes recent workflow and deployment data for diagnosis.
+- `deploy latest to staging` creates an approval prompt, then dispatches `GITHUB_DEPLOY_WORKFLOW` through the GitHub Actions workflow dispatch API after approval.
+- `list GitHub repos`, repository details, deployment lists, and approved repository creation are backed by GitHub API calls.
+
+## Notes and Next Steps
+
+1. Give `GITHUB_TOKEN` the least privilege needed for the actions you enable, including `actions:write` for deployment workflow dispatch.
+2. Keep approval storage in mind: approval requests are currently in Worker memory and can be replaced with KV/D1 if callbacks must survive isolate eviction.
+3. Add Supabase/Cloudflare-specific runners before advertising those actions as fully executable.
 
 ## Deployment
 

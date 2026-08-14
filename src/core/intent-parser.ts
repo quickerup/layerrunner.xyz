@@ -26,7 +26,7 @@ const INTENT_PATTERNS = {
   },
 };
 
-export function parseIntent(userInput: string): UserIntent {
+export function classifyIntentWithRules(userInput: string): UserIntent {
   const normalizedInput = userInput.toLowerCase();
   const words = normalizedInput.split(/\s+/);
   
@@ -62,4 +62,29 @@ function extractKeywords(input: string): string[] {
   // Simple keyword extraction - can be enhanced
   const words = input.toLowerCase().split(/\s+/);
   return words.filter(word => word.length > 3);
+}
+
+
+export async function parseIntent(userInput: string, provider?: import('../services/ai-provider').AIProvider): Promise<UserIntent> {
+  const fallbackIntent = classifyIntentWithRules(userInput);
+
+  if (!provider) {
+    return fallbackIntent;
+  }
+
+  try {
+    const classification = await provider.classifyIntent(userInput);
+    return {
+      ...fallbackIntent,
+      type: classification.type,
+      confidence: classification.confidence,
+      context: {
+        ...fallbackIntent.context,
+        aiReasoning: classification.reasoning,
+      },
+    };
+  } catch (error) {
+    console.warn('Intent provider failed; using rule fallback.', error);
+    return fallbackIntent;
+  }
 }
