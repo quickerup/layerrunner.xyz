@@ -1,5 +1,11 @@
 import { handleTelegramWebhook } from './telegram/webhook';
 import { Router } from 'itty-router';
+import { ApprovalStore } from './core/approval-store';
+import { UserLedger } from './core/metering';
+
+// Re-export Durable Object classes so Wrangler can register them
+export { ApprovalStore, UserLedger };
+
 
 const router = Router();
 

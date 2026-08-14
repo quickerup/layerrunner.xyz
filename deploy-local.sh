@@ -66,7 +66,8 @@ for key in \
   VAULT_JETTON_WALLET \
   JETTON_ADDRESS \
   APP_HEALTH_URL \
-  GITHUB_DEPLOY_WORKFLOW
+  GITHUB_DEPLOY_WORKFLOW \
+  TONCENTER_API_KEY
  do
   if [[ -n "${!key:-}" ]]; then
     echo "Setting Cloudflare secret: $key"

@@ -1,5 +1,6 @@
 import { Env } from '../config';
 import { ExecutionPlan } from './planner';
+import { formatLyr, buildDepositLink } from '../services/ton';
 
 const NANO_FACTOR = BigInt(1_000_000_000);
 
@@ -144,9 +145,17 @@ export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringRe
   if (metering.reason === 'unpriced_action') return '⚠️ This action is not priced yet, so I cannot run it safely.';
   const balance = metering.balanceNano ?? BigInt(0);
   const shortfall = metering.costNano > balance ? metering.costNano - balance : BigInt(0);
-  const address = env.VAULT_JETTON_WALLET;
-  const link = address ? `\nton://transfer/${address}?amount=${shortfall.toString()}&text=${encodeURIComponent(String(userId))}` : '';
-  return [`💎 *Top up required*`, `Balance: ${formatJettonAmount(balance)} JETTON`, `Needed: ${formatJettonAmount(metering.costNano)} JETTON`, `Shortfall: ${formatJettonAmount(shortfall)} JETTON`, link ? `\nDeposit link: ${link}` : '\nVault deposit address is not configured yet.'].join('\n');
+  const vault = env.VAULT_JETTON_WALLET;
+  const depositLink = vault ? buildDepositLink(vault, shortfall, userId) : null;
+  return [
+    `💎 *Top up required*`,
+    `Balance: ${formatLyr(balance)}`,
+    `Needed:  ${formatLyr(metering.costNano)}`,
+    `Shortfall: ${formatLyr(shortfall)}`,
+    depositLink
+      ? `\nDeposit link:\n${depositLink}`
+      : '\nVault deposit address is not configured yet.',
+  ].join('\n');
 }
 
 function ledgerStub(env: Env, userId: number): DurableObjectStub {
@@ -160,12 +169,6 @@ async function settle(env: Env, userId: number, reservationId: string, action: '
     body: JSON.stringify({ reservationId }),
   });
   if (!response.ok) throw new Error(`Ledger ${action} failed: ${response.status}`);
-}
-
-function formatJettonAmount(amountNano: bigint): string {
-  const units = amountNano / NANO_FACTOR;
-  const nanos = amountNano % NANO_FACTOR;
-  return `${units}.${nanos.toString().padStart(9, '0').replace(/0+$/, '').padEnd(2, '0')}`;
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
