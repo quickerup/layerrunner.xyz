@@ -64,6 +64,12 @@ export class UserLedger {
       await this.state.storage.delete('pendingSecret');
       return json({ ok: true });
     }
+    if (url.pathname === '/pending-wallet' && request.method === 'GET') return this.getStored('pendingWallet');
+    if (url.pathname === '/pending-wallet' && request.method === 'POST') return this.setStored('pendingWallet', request);
+    if (url.pathname === '/pending-wallet' && request.method === 'DELETE') {
+      await this.state.storage.delete('pendingWallet');
+      return json({ ok: true });
+    }
 
     return new Response('not found', { status: 404 });
   }

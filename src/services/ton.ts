@@ -39,15 +39,19 @@ export interface JettonWallet {
   last_transaction_lt: string;
 }
 
+// Field names verified directly against a live TonCenter v3 response for
+// this project's own vault wallet -- the endpoint takes `jetton_wallet`
+// (not `address`) and has no `direction`/`sender`/`created_lt` fields;
+// "incoming" has to be determined client-side by comparing `destination`.
 export interface JettonTransfer {
   transaction_hash: string;
-  direction: 'in' | 'out';
+  transaction_lt: string;
+  transaction_now: number;
+  transaction_aborted: boolean;
   amount: string;
-  sender: string | null;
-  destination: string | null;
-  comment: string | null;
-  created_lt: string;
-  created_at: number;
+  source: string | null; // sender's own jetton-wallet address
+  destination: string | null; // recipient's own jetton-wallet address
+  jetton_master: string;
 }
 
 export interface JettonMasterInfo {
@@ -131,8 +135,8 @@ export class TonCenterService {
   }
 
   /**
-   * Get recent LYR transfers for a given jetton wallet address.
-   * Use this to detect incoming deposits.
+   * Get recent transfers touching a given jetton wallet (both directions).
+   * Filter by `destination === jettonWalletAddress` for incoming only.
    */
   async getJettonTransfers(
     jettonWalletAddress: string,
@@ -140,15 +144,16 @@ export class TonCenterService {
   ): Promise<JettonTransfer[]> {
     const data = await this.get<{ jetton_transfers: JettonTransfer[] }>(
       '/jetton/transfers',
-      { address: jettonWalletAddress, direction: 'in', limit: String(limit) }
+      { jetton_wallet: jettonWalletAddress, limit: String(limit) }
     );
     return data.jetton_transfers;
   }
 
   /**
-   * Scan vault wallet for new LYR deposits.
-   * Returns transfers since the given logical time (lt).
-   * Pass the last known lt to detect only new deposits.
+   * Scan a vault wallet for new incoming LYR deposits since a given
+   * logical time (pass the last-processed lt to get only new ones).
+   * Excludes aborted transactions and anything not actually incoming
+   * (the raw endpoint returns both directions -- see getJettonTransfers).
    */
   async getVaultDeposits(
     vaultJettonWalletAddress: string,
@@ -156,17 +161,13 @@ export class TonCenterService {
     limit = 20,
   ): Promise<JettonTransfer[]> {
     const params: Record<string, string> = {
-      address: vaultJettonWalletAddress,
-      direction: 'in',
+      jetton_wallet: vaultJettonWalletAddress,
       limit: String(limit),
     };
     if (sinceLt) params['start_lt'] = sinceLt;
 
-    const data = await this.get<{ jetton_transfers: JettonTransfer[] }>(
-      '/jetton/transfers',
-      params
-    );
-    return data.jetton_transfers;
+    const data = await this.get<{ jetton_transfers: JettonTransfer[] }>('/jetton/transfers', params);
+    return data.jetton_transfers.filter(t => !t.transaction_aborted && t.destination === vaultJettonWalletAddress);
   }
 
   /**
@@ -176,16 +177,14 @@ export class TonCenterService {
   async verifyTransfer(
     txHash: string,
     expectedAmountNano: bigint,
-    expectedComment?: string,
   ): Promise<JettonTransfer | null> {
     const data = await this.get<{ jetton_transfers: JettonTransfer[] }>(
       '/jetton/transfers',
       { transaction_hash: txHash, limit: '1' }
     );
     const transfer = data.jetton_transfers[0];
-    if (!transfer) return null;
+    if (!transfer || transfer.transaction_aborted) return null;
     if (BigInt(transfer.amount) < expectedAmountNano) return null;
-    if (expectedComment && transfer.comment !== expectedComment) return null;
     return transfer;
   }
 }

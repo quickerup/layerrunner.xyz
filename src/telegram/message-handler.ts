@@ -3,10 +3,21 @@ import { createApprovalRequest, formatApprovalMessage } from '../core/approval';
 import { checkAndReserve, commitReservation, formatTopUpPrompt, getBalance, releaseReservation } from '../core/metering';
 import { parseIntent } from '../core/intent-parser';
 import { ExecutableAction, ExecutionPlan, generatePlan } from '../core/planner';
-import { CLASS_INFO, UserProfile, getOnboardingState, getUserProfile } from '../core/profile';
+import {
+  CLASS_INFO,
+  UserProfile,
+  clearAwaitingWalletLink,
+  getOnboardingState,
+  getUserProfile,
+  isAwaitingWalletLink,
+  saveUserProfile,
+  setAwaitingWalletLink,
+} from '../core/profile';
+import { reconcileVaultDeposits } from '../core/wallet-link';
 import { beginOnboarding, formatProfile, handleOnboardingMessage, isStartCommand } from './onboarding';
 import { createIntentProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
+import { formatLyr, initTonCenterService } from '../services/ton';
 import { sendTelegramMessage, sendTelegramMessageWithButtons, deleteTelegramMessage } from './api';
 import { escapeMarkdown } from '../core/markdown';
 import { TelegramMessage } from './types';
@@ -55,9 +66,47 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    if (await isAwaitingWalletLink(env, from.id)) {
+      await handlePendingWalletLink(env, chat.id, profile, text);
+      return;
+    }
+
     if (/^\s*\/profile\b/.test(text)) {
       const balance = await getBalance(env, from.id);
-      await sendTelegramMessage(env, chat.id, formatProfile(profile, false, balance));
+      const lines = [formatProfile(profile, false, balance)];
+      if (profile.walletAddress) {
+        try {
+          const walletBalance = await initTonCenterService(env).getLyrBalance(profile.walletAddress);
+          lines.push(`Linked wallet: \`${profile.walletAddress}\` (${formatLyr(walletBalance)} on-chain)`);
+        } catch {
+          lines.push(`Linked wallet: \`${profile.walletAddress}\``);
+        }
+      }
+      await sendTelegramMessage(env, chat.id, lines.join('\n'));
+      return;
+    }
+
+    if (/^\s*\/link_wallet\b/.test(text)) {
+      await setAwaitingWalletLink(env, from.id);
+      await sendTelegramMessage(env, chat.id, [
+        profile.walletAddress
+          ? `🔗 You already have \`${profile.walletAddress}\` linked — paste a new address now to replace it.`
+          : '🔗 Paste your TON wallet address now, as your next message.',
+        '',
+        "This is just your public address, not a secret — I'll use it to read its LYR balance and to detect when you send LYR to the vault, so I can top up your balance automatically once your free credit runs out. Remove it anytime with `/unlink_wallet`.",
+        '',
+        'Send `/cancel` to back out.',
+      ].join('\n'));
+      return;
+    }
+
+    if (/^\s*\/unlink_wallet\b/.test(text)) {
+      if (!profile.walletAddress) {
+        await sendTelegramMessage(env, chat.id, "You don't have a wallet linked.");
+        return;
+      }
+      await saveUserProfile(env, { ...profile, walletAddress: undefined, lastDepositLt: undefined });
+      await sendTelegramMessage(env, chat.id, '🔓 Wallet unlinked.');
       return;
     }
 
@@ -125,7 +174,14 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
-    const metering = await checkAndReserve(env, from.id, plan);
+    let metering = await checkAndReserve(env, from.id, plan);
+
+    if (!metering.ok && metering.reason === 'insufficient_balance' && profile.walletAddress) {
+      const credited = await reconcileVaultDeposits(env, profile);
+      if (credited > BigInt(0)) {
+        metering = await checkAndReserve(env, from.id, plan);
+      }
+    }
 
     if (!metering.ok) {
       await sendTelegramMessage(env, chat.id, formatTopUpPrompt(env, from.id, metering));
@@ -196,6 +252,37 @@ async function handlePendingSecretInput(
   await clearPendingSecretInput(env, userId);
   await deleteTelegramMessage(env, chatId, messageId);
   await sendTelegramMessage(env, chatId, '✅ Saved, encrypted, and your message with the token has been deleted from this chat.');
+}
+
+async function handlePendingWalletLink(env: Env, chatId: number, profile: UserProfile, text: string): Promise<void> {
+  if (/^\s*\/cancel\b/.test(text)) {
+    await clearAwaitingWalletLink(env, profile.userId);
+    await sendTelegramMessage(env, chatId, 'Cancelled — nothing was saved.');
+    return;
+  }
+
+  const address = text.trim();
+  if (!/^(?:[EU]Q[\w-]{46}|0:[0-9a-fA-F]{64})$/.test(address)) {
+    await sendTelegramMessage(env, chatId, "That doesn't look like a TON address — paste it as-is, or `/cancel`.");
+    return;
+  }
+
+  let balance: bigint;
+  try {
+    balance = await initTonCenterService(env).getLyrBalance(address);
+  } catch {
+    await sendTelegramMessage(env, chatId, "Couldn't look that address up on-chain — double check it, or `/cancel`.");
+    return;
+  }
+
+  await saveUserProfile(env, { ...profile, walletAddress: address, lastDepositLt: undefined });
+  await clearAwaitingWalletLink(env, profile.userId);
+  await sendTelegramMessage(env, chatId, [
+    `✅ Linked \`${address}\`.`,
+    `Current balance: ${formatLyr(balance)}`,
+    '',
+    'Send LYR from this wallet to the vault anytime and I\'ll credit it to your balance automatically once your free credit runs out.',
+  ].join('\n'));
 }
 
 async function executeAndFormat(
@@ -314,6 +401,8 @@ function formatHelpMessage(): string {
     'By default everything runs against a shared GitHub account. Want it to act on your own instead? `/connect_github` walks you through it — your token is encrypted at rest and your message gets deleted right after (`/disconnect_github` to remove it anytime).',
     '',
     '*About LYR* — every request that actually does something costs a small amount of LYR, priced by how much work it is: a status check is cheap, a diagnosis costs more, a deploy costs the most. Chat and help are always free. Buy LYR anytime at layerrunners.xyz — `/profile` shows your role, default repo, and current balance.',
+    '',
+    'Once your free credit runs out, `/link_wallet` lets you top up by sending LYR to the vault from your own wallet — I detect the deposit and credit it automatically.',
   ].join('\n');
 }
 

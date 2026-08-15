@@ -15,6 +15,10 @@ export interface UserProfile {
   class: UserClass;
   defaultRepo?: string;
   createdAt: number;
+  /** Linked TON wallet (public address only, not a secret) — see /link_wallet. */
+  walletAddress?: string;
+  /** Logical time of the last vault deposit already credited from this wallet, to avoid double-crediting. */
+  lastDepositLt?: string;
 }
 
 export type OnboardingStep = 'name' | 'class' | 'repo';
@@ -64,6 +68,21 @@ export async function saveOnboardingState(env: Env, userId: number, state: Onboa
 export async function clearOnboardingState(env: Env, userId: number): Promise<void> {
   const response = await ledgerStub(env, userId).fetch('https://ledger/onboarding', { method: 'DELETE' });
   if (!response.ok) throw new Error(`Failed to clear onboarding state: ${response.status}`);
+}
+
+export async function isAwaitingWalletLink(env: Env, userId: number): Promise<boolean> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/pending-wallet');
+  return response.status === 200;
+}
+
+export async function setAwaitingWalletLink(env: Env, userId: number): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/pending-wallet', { method: 'POST', body: '{}' });
+  if (!response.ok) throw new Error(`Failed to set pending wallet link: ${response.status}`);
+}
+
+export async function clearAwaitingWalletLink(env: Env, userId: number): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/pending-wallet', { method: 'DELETE' });
+  if (!response.ok) throw new Error(`Failed to clear pending wallet link: ${response.status}`);
 }
 
 function ledgerStub(env: Env, userId: number): DurableObjectStub {
