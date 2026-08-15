@@ -6,7 +6,7 @@ import { CLASS_INFO, UserClass, getOnboardingState, getUserProfile } from '../co
 import { handleClassSelection } from './onboarding';
 import { ActionExecutor } from '../services/executor';
 import { answerCallbackQuery, sendTelegramMessage } from './api';
-import { formatExecutionResult } from './message-handler';
+import { formatExecutionResult } from '../core/chat-engine';
 import { TelegramCallbackQuery } from './types';
 import { GITHUB_TOKEN_SECRET, getUserSecret } from '../core/user-secrets';
 
@@ -45,7 +45,8 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
-  const isRequester = callbackQuery.from.id === request.userId;
+  const requesterIdentity = request.identity;
+  const isRequester = telegramIdentity(callbackQuery.from.id) === requesterIdentity;
   const requesterProfile = isRequester ? undefined : await getUserProfile(env, telegramIdentity(callbackQuery.from.id));
   const isReviewer = requesterProfile?.class === 'reviewer';
 
@@ -54,13 +55,17 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
-  const requesterIdentity = telegramIdentity(request.userId);
+  // chatId is only set for Telegram-originated requests -- always true here
+  // (this handler only ever fires from a Telegram callback button), but the
+  // field stays optional on ApprovalRequest since web-originated requests
+  // (POST /api/approve) have no Telegram chat to notify.
+  const chatId = request.chatId;
 
   if (action === 'reject') {
     await rejectRequest(env, requestId);
     await releaseReservation(env, requesterIdentity, request.meteringReservationId);
     await answerCallbackQuery(env, callbackQuery.id, 'Rejected.');
-    await sendTelegramMessage(env, request.chatId, `❌ Cancelled approval request \`${request.id}\`.`);
+    if (chatId) await sendTelegramMessage(env, chatId, `❌ Cancelled approval request \`${request.id}\`.`);
     return;
   }
 
@@ -78,7 +83,7 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
 
   if (request.executableSteps.length === 0) {
     await releaseReservation(env, requesterIdentity, request.meteringReservationId);
-    await sendTelegramMessage(env, request.chatId, `✅ Approved request \`${request.id}\`, but no executable action was available.`);
+    if (chatId) await sendTelegramMessage(env, chatId, `✅ Approved request \`${request.id}\`, but no executable action was available.`);
     return;
   }
 
@@ -93,5 +98,5 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     lines.push(formatExecutionResult(executable.action, results.get(executable.id)!));
   }
 
-  await sendTelegramMessage(env, request.chatId, lines.join('\n'));
+  if (chatId) await sendTelegramMessage(env, chatId, lines.join('\n'));
 }

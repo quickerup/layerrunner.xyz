@@ -13,6 +13,7 @@ import {
   UserClass,
   UserProfile,
   clearOnboardingState,
+  formatProfile,
   saveOnboardingState,
   saveUserProfile,
 } from '../core/profile';
@@ -134,24 +135,6 @@ async function finishOnboarding(
   await creditBalance(env, identity, FREE_TRIAL_CREDIT_NANO);
   const balance = await getBalance(env, identity);
   await sendTelegramMessage(env, chatId, formatProfile(profile, true, balance));
-}
-
-export function formatProfile(profile: UserProfile, justSetUp: boolean, balanceNano: bigint): string {
-  const info = CLASS_INFO[profile.class];
-  const lines = [
-    justSetUp ? "*You're set up.*" : '*Your profile*',
-    '',
-    `Name: *${escapeMarkdown(profile.displayName)}*`,
-    `Role: ${info.emoji} *${info.label}* — ${info.blurb}`,
-    `Default repo: ${profile.defaultRepo ? `\`${profile.defaultRepo}\`` : '_server default_'}`,
-    `Balance: ${formatLyr(balanceNano)}`,
-  ];
-
-  if (justSetUp) {
-    lines.push('', `You've got ${formatLyr(FREE_TRIAL_CREDIT_NANO)} free to try things out — try \`show production status\` to get started. Buy more anytime at layerrunners.xyz.`);
-  }
-
-  return lines.join('\n');
 }
 
 function classButtons() {

@@ -7,6 +7,9 @@
 
 import { Env } from '../config';
 import { ledgerStub as sharedLedgerStub } from './identity';
+import { escapeMarkdown } from './markdown';
+import { FREE_TRIAL_CREDIT_NANO } from './metering';
+import { formatLyr } from '../services/ton';
 
 export type UserClass = 'deployer' | 'watcher' | 'reviewer';
 
@@ -103,4 +106,22 @@ export async function clearAwaitingWalletLink(env: Env, identity: string): Promi
 
 function ledgerStub(env: Env, identity: string): DurableObjectStub {
   return sharedLedgerStub(env, identity);
+}
+
+export function formatProfile(profile: UserProfile, justSetUp: boolean, balanceNano: bigint): string {
+  const info = CLASS_INFO[profile.class];
+  const lines = [
+    justSetUp ? "*You're set up.*" : '*Your profile*',
+    '',
+    `Name: *${escapeMarkdown(profile.displayName)}*`,
+    `Role: ${info.emoji} *${info.label}* — ${info.blurb}`,
+    `Default repo: ${profile.defaultRepo ? `\`${profile.defaultRepo}\`` : '_server default_'}`,
+    `Balance: ${formatLyr(balanceNano)}`,
+  ];
+
+  if (justSetUp) {
+    lines.push('', `You've got ${formatLyr(FREE_TRIAL_CREDIT_NANO)} free to try things out — try \`show production status\` to get started. Buy more anytime at layerrunners.xyz.`);
+  }
+
+  return lines.join('\n');
 }

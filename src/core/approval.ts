@@ -4,13 +4,15 @@
  */
 
 import { Env } from '../config';
+import { telegramIdentity } from './identity';
 import { escapeMarkdown } from './markdown';
 import { ExecutableAction } from './planner';
 
 export interface ApprovalRequest {
   id: string;
-  userId: number;
-  chatId: number;
+  identity: string;
+  /** Set only for Telegram-originated requests -- the chat to notify on approve/reject. Web-originated requests have no chat to notify; the frontend reads the result from POST /api/approve directly. */
+  chatId?: number;
   intent: string;
   plan: string;
   steps: string[];
@@ -74,8 +76,8 @@ export class ApprovalStore {
 
 export async function createApprovalRequest(
   env: Env,
-  userId: number,
-  chatId: number,
+  identity: string,
+  chatId: number | undefined,
   intent: string,
   plan: string,
   steps: string[],
@@ -90,7 +92,7 @@ export async function createApprovalRequest(
 
   const approval: ApprovalRequest = {
     id,
-    userId,
+    identity,
     chatId,
     intent,
     plan,
@@ -117,7 +119,19 @@ export async function getApprovalRequest(env: Env, requestId: string): Promise<A
   const response = await approvalStub(env, requestId).fetch('https://approval/get');
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`Failed to load approval request: ${response.status}`);
-  return response.json() as Promise<ApprovalRequest>;
+  const stored = await response.json() as ApprovalRequest & { userId?: number };
+
+  // Migration shim: requests created before the identity generalization
+  // were stored with a numeric `userId`, not `identity`. Requests expire
+  // after 15 minutes, so this only matters for the brief window right
+  // after deploy -- but a request straddling that window must still
+  // resolve to the same Telegram-identity DO it reserved metering under.
+  if (!stored.identity && stored.userId !== undefined) {
+    const { userId, ...rest } = stored;
+    return { ...rest, identity: telegramIdentity(userId) };
+  }
+
+  return stored;
 }
 
 export async function approveRequest(env: Env, requestId: string): Promise<boolean> {
