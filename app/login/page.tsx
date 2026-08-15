@@ -72,8 +72,8 @@ export default function LoginPage() {
         <h2>Sign in to Layer Runners</h2>
         <p>
           Telegram resolves to the exact same account as the bot — if you&apos;ve already used @{BOT_USERNAME}, your
-          balance, profile, and linked wallet carry over immediately. GitHub creates a separate web identity with
-          read-only profile access only; repo access still requires the in-chat connect flow.
+          balance, profile, and linked wallet carry over immediately. GitHub and Google create separate web identities with
+          profile-only login scopes; repo access still requires the in-chat connect flow.
         </p>
 
         {state.kind === "signed-in" ? (
@@ -87,6 +87,9 @@ export default function LoginPage() {
           <div className="login-options">
             <a className="button primary" href="/auth/github">
               Continue with GitHub
+            </a>
+            <a className="button secondary" href="/auth/google">
+              Continue with Google
             </a>
             <div className="login-divider">or use your existing bot account</div>
             <div id="telegram-login-widget" />

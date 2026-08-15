@@ -98,7 +98,7 @@ secrets `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`.
   scope only), `GET /auth/github/callback` (exchange code, fetch
   `/user`, mint session with identity `gh:<id>`).
 
-### ⬜ Phase 5 — Google OAuth login (not started)
+### ✅ Phase 5 — Google OAuth login (done)
 **Needs first:** a Google Cloud project + OAuth 2.0 Client ID
 (console.cloud.google.com → APIs & Services → Credentials), authorized
 redirect URI `https://layerrunners.xyz/auth/google/callback`. Set
