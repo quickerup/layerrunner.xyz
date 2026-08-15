@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.3.0] - 2026-08-15
+
+### Web Login & Chat, Shared Execution Pipeline
+
+#### Added
+
+**Web login**
+- ✅ `/login` — Telegram Login Widget, verified server-side against Telegram's documented HMAC algorithm; resolves to the exact same identity/`LEDGER` object the bot already uses, so an existing Telegram user's balance, profile, and linked wallet show up on web immediately, no migration step
+- ✅ HMAC-signed session cookie (`core/session.ts`), same native-`crypto.subtle` approach as secret encryption — no new dependency; quietly reissued past half-life so an active session never hits a hard logout
+- ✅ `layerrunners.xyz/auth/*` and `/api/*` now route to the Worker (`wrangler.toml`), alongside the existing `/telegram/webhook`
+
+**Web chat**
+- ✅ `/chat` — mirrors the bot: send plain-English requests, see the plan, approve/reject when a request needs sign-off, balance shown with a link to buy more
+- ✅ `POST /api/chat` and `POST /api/approve` drive the *same* intent → plan → role/metering gate → approval-or-execute pipeline as the Telegram bot (`core/chat-engine.ts`, extracted from `telegram/message-handler.ts`) — no duplicated logic between channels
+- ✅ New (non-Telegram) identities get a profile with safe defaults — Watcher (read-only) role, same free trial credit — instead of a forced setup wizard, since nobody explicitly chose a role the way the Telegram wizard requires
+
+**Node-linking execution (n8n-style)**
+- ✅ A plan step's params can now reference an earlier step's output (`StepRef`: `{ $stepRef, path }`), resolved by the executor immediately before that step runs — steps are no longer isolated, blind calls
+- ✅ First real use: deploying with no explicit branch/ref now looks up the repo's actual default branch and links it in, instead of guessing `'main'`
+
+#### Fixed
+
+- 🐛 Telegram's legacy Markdown parser rejects an entire message on any single unescaped `_`/`*`/`` ` ``/`[` — the CI workflow run URL in `project_status`/diagnose output was interpolated unescaped, and GitHub URLs routinely contain underscores. Fixed the specific field, and made the underlying send resilient generally: a Markdown parse error now retries once as plain text instead of the message silently failing behind a generic error.
+- 🐛 GitHub API failures (bad/expired token, repo not found or inaccessible, rate limiting) now translate into specific, actionable chat responses (e.g. "reconnect via `/connect_github`") instead of a raw status-code dump — `GitHubService` throws a typed `GitHubApiError` (status/path/body) that the formatting layer classifies.
+
+#### Changed
+- `ApprovalRequest` generalized from a Telegram-only `userId`/`chatId` to `identity` (string, any channel) + optional `chatId` (Telegram-only, for notifying the originating chat) — needed so the chat engine can create approval requests for web-originated actions too. Includes a migration shim for any request already in flight at deploy time.
+- Approve/reject resolution (permission check, reservation release/commit, execution, result formatting) extracted out of `telegram/callback-handler.ts` into `core/chat-engine.ts::resolveApproval`, shared by the Telegram inline-keyboard flow and the new `/api/approve` route.
+
 ## [0.2.0] - 2026-08-15
 
 ### Production Recovery, User Profiles, and the LYR Token Economy
