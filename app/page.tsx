@@ -60,6 +60,7 @@ export default function Home() {
           <a href="#integrations">Integrations</a>
           <a href="#buy-lyr">Buy LYR</a>
           <a href="#security">Security</a>
+          <a href="/login">Sign in</a>
         </div>
       </nav>
 
@@ -72,7 +73,8 @@ export default function Home() {
             operates your stack, verifies the result, and tells you what happened.
           </p>
           <div className="cta-row" aria-label="Primary actions">
-            <a className="button primary" href="#telegram">Open Layer Runners on Telegram</a>
+            <a className="button primary" href="/chat">Try the web chat</a>
+            <a className="button secondary" href="#telegram">Open on Telegram</a>
             <a className="button secondary" href="#buy-lyr">Buy LYR</a>
           </div>
         </div>
@@ -164,13 +166,21 @@ export default function Home() {
 
       <section className="section two-column telegram" id="telegram" aria-labelledby="telegram-heading">
         <div>
-          <p className="eyebrow">Telegram</p>
-          <h2 id="telegram-heading">Your stack, in your pocket.</h2>
+          <p className="eyebrow">Chat</p>
+          <h2 id="telegram-heading">Talk to Layer Runners, wherever you are.</h2>
           <p>
             Ask questions, investigate incidents, request operations, approve changes,
-            and receive alerts directly through Telegram.
+            and receive alerts through Telegram — or sign in on the web if you'd rather
+            not use Telegram at all. Same plans, same approvals, same balance either way.
           </p>
-          <a className="button primary" href="https://t.me/layerrunnersbot">Open Layer Runners on Telegram</a>
+          <div className="cta-row" aria-label="Chat actions">
+            <a className="button primary" href="/login">Sign in to web chat</a>
+            <a className="button secondary" href="https://t.me/layerrunnersbot">Open on Telegram</a>
+          </div>
+          <p className="planned-note">
+            Web login works with your existing Telegram account (same balance and profile,
+            zero setup), or with GitHub / Google as a separate account.
+          </p>
         </div>
         <div className="phone-card">
           <p>Production deployment requested.</p>

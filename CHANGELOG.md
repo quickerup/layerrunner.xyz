@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-08-15
+
+### GitHub/Google Login, Homepage Web-Chat Visibility
+
+#### Added
+
+- ✅ "Continue with GitHub" and "Continue with Google" on `/login`, alongside the existing Telegram Login Widget — standard OAuth2 authorization-code flow with CSRF-protected state cookies (`src/auth/routes.ts`). Identity-only (`read:user` / `openid email profile` scopes) — these are separate new accounts (`gh:<id>`, `google:<sub>`), not merged with an existing Telegram identity, and don't grant repo access (`/connect_github` is still the only path to that).
+- ✅ Homepage now actually surfaces both ways in: a "Sign in" nav link, a "Try the web chat" primary hero CTA, and the former Telegram-only section is now a combined Chat section explaining both Telegram and web login (including that Telegram login carries over existing balance/profile with zero setup).
+
+#### Changed
+- `core/identity.ts` gains `githubIdentity`/`googleIdentity` alongside `telegramIdentity`; `docs/web-login-plan.md` phases 4 and 5 marked done.
+
 ## [0.3.0] - 2026-08-15
 
 ### Web Login & Chat, Shared Execution Pipeline
