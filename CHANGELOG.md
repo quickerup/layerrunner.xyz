@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1] - 2026-08-15
+
+### Buy-LYR Widget: Fixed Short-Payout Bug
+
+#### Fixed
+- 🐛 Buying LYR with TON paid out less than advertised (e.g. 1 TON → 90 LYR instead of the advertised 100). Root cause: `contracts/lyr-sale.tolk`'s `buyWithTon` subtracts a flat 0.1 TON reserve (gas + outgoing transfer's forward value) from the message value *before* applying the rate, and the widget was only sending the buyer's intended spend amount with no reserve on top — every purchase was silently shortchanged by `0.1 TON * lyrPerTon` worth of LYR. This is a live mainnet contract with no upgrade path, so instead of a redeploy, `lib/components/buy-lyr-widget.tsx` now sends `(chosen TON amount) + TON_PURCHASE_RESERVE_NANO` (new constant in `lib/ton-config.ts`, must track the contract's `TON_PURCHASE_RESERVE`), so the contract's `netValue` lands exactly on what the buyer meant to spend. The widget also now discloses the actual total TON the wallet will be asked to send, not just the pre-reserve estimate.
+
 ## [0.4.0] - 2026-08-15
 
 ### GitHub/Google Login, Homepage Web-Chat Visibility

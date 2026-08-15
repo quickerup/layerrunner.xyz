@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
-import { DEFAULT_LYR_PER_TON, SALE_CONTRACT_ADDRESS } from "../ton-config";
+import { DEFAULT_LYR_PER_TON, SALE_CONTRACT_ADDRESS, TON_PURCHASE_RESERVE_NANO } from "../ton-config";
 
 const NANO_FACTOR = 1_000_000_000;
 
@@ -30,7 +30,11 @@ export function BuyLyrWidget() {
             address: SALE_CONTRACT_ADDRESS,
             // nanoTON, sent with an empty body -- this is exactly the
             // "buy LYR with TON" path in lyr-sale.tolk's onInternalMessage.
-            amount: String(Math.round(parsedTon * NANO_FACTOR)),
+            // The contract subtracts TON_PURCHASE_RESERVE_NANO before
+            // converting to LYR, so the reserve is added on top here --
+            // netValue on-chain ends up equal to the buyer's chosen
+            // amount, and they get the full advertised rate for it.
+            amount: String(Math.round(parsedTon * NANO_FACTOR) + TON_PURCHASE_RESERVE_NANO),
           },
         ],
       });
@@ -52,7 +56,7 @@ export function BuyLyrWidget() {
         <p className="buy-lyr-note">Connect a TON wallet to buy LYR.</p>
       ) : (
         <div className="buy-lyr-form">
-          <label htmlFor="ton-amount">Pay (TON)</label>
+          <label htmlFor="ton-amount">LYR purchase amount (in TON)</label>
           <input
             id="ton-amount"
             type="number"
@@ -64,7 +68,11 @@ export function BuyLyrWidget() {
           <p className="buy-lyr-estimate">
             ≈ {estimatedLyr.toLocaleString()} LYR at {DEFAULT_LYR_PER_TON} LYR / TON
             <br />
-            <small>Final rate is whatever the contract has set at the time your transaction lands.</small>
+            <small>
+              Your wallet will be asked to send {isValidAmount ? (parsedTon + TON_PURCHASE_RESERVE_NANO / NANO_FACTOR).toLocaleString() : "0"} TON
+              total — {tonAmount || 0} TON converts to LYR, plus a fixed {TON_PURCHASE_RESERVE_NANO / NANO_FACTOR} TON network
+              reserve the contract requires on top. Final rate is whatever the contract has set at the time your transaction lands.
+            </small>
           </p>
           <button className="button primary" type="button" disabled={!isValidAmount || status.kind === "sending"} onClick={handleBuy}>
             {status.kind === "sending" ? "Waiting for wallet…" : "Buy LYR"}

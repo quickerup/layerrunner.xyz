@@ -36,3 +36,12 @@ export const LYR_DECIMALS = 9;
 export const SALE_CONTRACT_ADDRESS: string | null = "EQDcvHpDqQFe50_FS5dGurcgP4z5FpAREAzidFQNaKKJDnnZ";
 
 export const DEFAULT_LYR_PER_TON = 100;
+
+// Must match contracts/lyr-sale.tolk's TON_PURCHASE_RESERVE exactly. The
+// contract subtracts this from the message value *before* applying the
+// rate (netValue = msgValue - reserve; lyrOut = netValue * lyrPerTon), so
+// a buy widget that sends only the intended spend amount silently
+// shortchanges the buyer by reserve * lyrPerTon worth of LYR. The widget
+// adds this on top of the buyer's chosen amount so netValue lands on
+// exactly what they meant to spend.
+export const TON_PURCHASE_RESERVE_NANO = 100_000_000; // 0.1 TON
