@@ -48,6 +48,22 @@ new_sqlite_classes = ["ApprovalStore", "UserLedger"]
 [env.production.ai]
 binding = "AI"
 
+[[env.production.routes]]
+pattern = "layerrunners.xyz/auth/*"
+zone_name = "layerrunners.xyz"
+
+[[env.production.routes]]
+pattern = "layerrunners.xyz/api/*"
+zone_name = "layerrunners.xyz"
+
+[[env.production.routes]]
+pattern = "www.layerrunners.xyz/auth/*"
+zone_name = "layerrunners.xyz"
+
+[[env.production.routes]]
+pattern = "www.layerrunners.xyz/api/*"
+zone_name = "layerrunners.xyz"
+
 [env.staging]
 name = "layerrunner-staging"
 vars = { ENVIRONMENT = "staging" }

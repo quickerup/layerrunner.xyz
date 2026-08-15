@@ -88,9 +88,9 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   const executor = new ActionExecutor(env, userGithubToken);
   const lines = [`✅ Approved request \`${request.id}\`.`, '', '*Execution Result*:'];
 
+  const results = await executor.executePlan(request.executableSteps);
   for (const executable of request.executableSteps) {
-    const result = await executor.executeAction(executable.action, executable.params);
-    lines.push(formatExecutionResult(executable.action, result));
+    lines.push(formatExecutionResult(executable.action, results.get(executable.id)!));
   }
 
   await sendTelegramMessage(env, request.chatId, lines.join('\n'));

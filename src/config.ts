@@ -27,6 +27,12 @@ export interface Env {
   // core/secrets-crypto.ts and core/user-secrets.ts. Set once by whoever
   // deploys the bot; end users never touch this or any wrangler command.
   SECRETS_ENCRYPTION_KEY: string;
+  // Signing key for web session cookies (core/session.ts) -- separate from
+  // SECRETS_ENCRYPTION_KEY since it protects a different thing (session
+  // integrity, not secret confidentiality) and should be rotatable
+  // independently (rotating it just logs everyone out, vs. rotating the
+  // secrets key which would strand every stored GitHub token).
+  SESSION_SIGNING_KEY?: string;
 }
 
 export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {

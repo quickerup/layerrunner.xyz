@@ -4,6 +4,7 @@
  */
 
 import { Env } from '../config';
+import { ExecutableAction, StepRef } from '../core/planner';
 import { GitHubService, GitHubWorkflowRun } from './github';
 
 export interface ExecutionResult {
@@ -13,8 +14,48 @@ export interface ExecutionResult {
   executionTime: number;
 }
 
+function isStepRef(value: unknown): value is StepRef {
+  return typeof value === 'object' && value !== null && '$stepRef' in value && 'path' in value;
+}
+
+function getPath(obj: any, path: string): any {
+  return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+
+// Walks a step's params and swaps any StepRef for the actual value read out
+// of the referenced (already-run) step's output -- the resolution half of
+// the n8n-style node-linking primitive declared in core/planner.ts.
+function resolveStepRefs(value: any, results: Map<string, ExecutionResult>): any {
+  if (isStepRef(value)) {
+    const source = results.get(value.$stepRef);
+    if (!source) throw new Error(`Step "${value.$stepRef}" has not run yet or does not exist.`);
+    if (!source.success) throw new Error(`Step "${value.$stepRef}" failed (${source.error}), cannot use its output.`);
+    return getPath(source.output, value.path);
+  }
+  if (Array.isArray(value)) return value.map(item => resolveStepRefs(item, results));
+  if (value && typeof value === 'object') {
+    const resolved: Record<string, any> = {};
+    for (const [key, item] of Object.entries(value)) resolved[key] = resolveStepRefs(item, results);
+    return resolved;
+  }
+  return value;
+}
+
 export class ActionExecutor {
   constructor(private readonly env: Env, private readonly userGithubToken?: string) {}
+
+  // Runs a plan's steps in order, resolving each step's StepRefs against the
+  // outputs of steps that already ran, and keying results by step id so
+  // later steps (and callers formatting the final response) can look them up.
+  async executePlan(executableSteps: ExecutableAction[]): Promise<Map<string, ExecutionResult>> {
+    const results = new Map<string, ExecutionResult>();
+    for (const step of executableSteps) {
+      const params = resolveStepRefs(step.params, results);
+      results.set(step.id, await this.executeAction(step.action, params));
+    }
+    return results;
+  }
+
   async executeAction(
     action: string,
     params: Record<string, any>
@@ -97,13 +138,7 @@ export class ActionExecutor {
 
   private async getGitHubRepo(params: Record<string, any>) {
     const github = this.initGitHubService();
-    const owner = params.owner || this.env.GITHUB_OWNER;
-    const repo = params.repo;
-    
-    if (!owner || !repo) {
-      throw new Error('GitHub owner and repo are required');
-    }
-
+    const { owner, repo } = this.resolveRepo(params);
     return github.getRepository(owner, repo);
   }
 

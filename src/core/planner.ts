@@ -5,8 +5,23 @@
 
 import { UserIntent } from './intent-parser';
 
+/**
+ * A reference to another step's output, resolved by the executor
+ * immediately before that step runs (see services/executor.ts ::
+ * resolveStepRefs) -- the n8n-style "connect this node's input to that
+ * node's output" primitive. `path` is a dot-path into the referenced
+ * step's `ExecutionResult.output`.
+ */
+export interface StepRef {
+  $stepRef: string;
+  path: string;
+}
+
 export interface ExecutableAction {
+  /** Unique within one plan -- the "node name" other steps link to via StepRef. */
+  id: string;
   action: string;
+  /** Values may be a StepRef (or contain one, nested in an object/array) instead of a literal. */
   params: Record<string, any>;
 }
 
@@ -52,25 +67,12 @@ function planStepsForIntent(intent: UserIntent): ExecutionStep[] {
       description: 'Check repository, CI, deployment, and application health',
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'project_status', params: { repo: extractRepoName(intent.description) } },
+      executable: { id: 'project_status', action: 'project_status', params: { repo: extractRepoName(intent.description) } },
     }];
   }
 
   if (isDeployRequest(text)) {
-    return [{
-      action: 'github_deploy',
-      description: `Trigger the GitHub deployment workflow for ${extractEnvironment(text)}`,
-      service: 'github',
-      requiresApproval: true,
-      executable: {
-        action: 'github_deploy',
-        params: {
-          repo: extractRepoName(intent.description),
-          environment: extractEnvironment(text),
-          ref: extractRef(intent.description) ?? 'main',
-        },
-      },
-    }];
+    return deploySteps(intent, text);
   }
 
   switch (intent.type) {
@@ -85,6 +87,49 @@ function planStepsForIntent(intent: UserIntent): ExecutionStep[] {
   }
 }
 
+// When no explicit ref/branch/tag/sha was given, chain a repo lookup ahead
+// of the deploy step and link its result in, rather than guessing 'main' --
+// the repo's actual default branch may not be 'main'. `ref` here is a
+// StepRef, resolved by the executor from the lookup step's output right
+// before the deploy step runs.
+function deploySteps(intent: UserIntent, text: string): ExecutionStep[] {
+  const repo = extractRepoName(intent.description);
+  const environment = extractEnvironment(text);
+  const explicitRef = extractRef(intent.description);
+  const deployDescription = `Trigger the GitHub deployment workflow for ${environment}`;
+
+  if (explicitRef) {
+    return [{
+      action: 'github_deploy',
+      description: deployDescription,
+      service: 'github',
+      requiresApproval: true,
+      executable: { id: 'github_deploy', action: 'github_deploy', params: { repo, environment, ref: explicitRef } },
+    }];
+  }
+
+  return [
+    {
+      action: 'github_get_repo',
+      description: `Look up the default branch${repo ? ` for ${repo}` : ''}`,
+      service: 'github',
+      requiresApproval: false,
+      executable: { id: 'github_get_repo', action: 'github_get_repo', params: { repo } },
+    },
+    {
+      action: 'github_deploy',
+      description: deployDescription,
+      service: 'github',
+      requiresApproval: true,
+      executable: {
+        id: 'github_deploy',
+        action: 'github_deploy',
+        params: { repo, environment, ref: { $stepRef: 'github_get_repo', path: 'default_branch' } },
+      },
+    },
+  ];
+}
+
 function handleQueryIntent(intent: UserIntent): ExecutionStep[] {
   const text = intent.description.toLowerCase();
 
@@ -94,24 +139,24 @@ function handleQueryIntent(intent: UserIntent): ExecutionStep[] {
       description: 'Get recent GitHub Actions workflow runs',
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'github_get_workflow_runs', params: { repo: extractRepoName(intent.description) } },
+      executable: { id: 'github_get_workflow_runs', action: 'github_get_workflow_runs', params: { repo: extractRepoName(intent.description) } },
     }];
   }
 
   if (mentionsGitHub(text) && isRepoDetailQuery(text)) {
     const repo = extractRepoName(intent.description);
     if (!repo) return [repoClarificationStep()];
-    return [{ action: 'github_get_repo', description: `Get GitHub repository details for ${repo}`, service: 'github', requiresApproval: false, executable: { action: 'github_get_repo', params: { repo } } }];
+    return [{ action: 'github_get_repo', description: `Get GitHub repository details for ${repo}`, service: 'github', requiresApproval: false, executable: { id: 'github_get_repo', action: 'github_get_repo', params: { repo } } }];
   }
 
   if (mentionsGitHub(text) && /\b(repos?|repositories)\b/.test(text)) {
-    return [{ action: 'github_list_repos', description: 'List GitHub repositories', service: 'github', requiresApproval: false, executable: { action: 'github_list_repos', params: {} } }];
+    return [{ action: 'github_list_repos', description: 'List GitHub repositories', service: 'github', requiresApproval: false, executable: { id: 'github_list_repos', action: 'github_list_repos', params: {} } }];
   }
 
   if (mentionsGitHub(text) && /\bdeployments?\b/.test(text)) {
     const repo = extractRepoName(intent.description);
     if (!repo) return [repoClarificationStep()];
-    return [{ action: 'github_get_deployments', description: `Get recent GitHub deployments for ${repo}`, service: 'github', requiresApproval: false, executable: { action: 'github_get_deployments', params: { repo } } }];
+    return [{ action: 'github_get_deployments', description: `Get recent GitHub deployments for ${repo}`, service: 'github', requiresApproval: false, executable: { id: 'github_get_deployments', action: 'github_get_deployments', params: { repo } } }];
   }
 
   return [{ action: 'fetch_data', description: `Retrieve information: ${intent.description}`, service: 'query_engine', requiresApproval: false }];
@@ -123,7 +168,7 @@ function handleActionIntent(intent: UserIntent): ExecutionStep[] {
   if (mentionsGitHub(text) && /\b(create|add|make|new)\b/.test(text) && /\b(repo|repository)\b/.test(text)) {
     const name = extractRepoName(intent.description);
     if (!name) return [{ action: 'clarify', description: 'Please provide a repository name to create.', service: 'chat', requiresApproval: false }];
-    return [{ action: 'github_create_repo', description: `Create GitHub repository ${name}`, service: 'github', requiresApproval: true, executable: { action: 'github_create_repo', params: { name, private: text.includes('private') } } }];
+    return [{ action: 'github_create_repo', description: `Create GitHub repository ${name}`, service: 'github', requiresApproval: true, executable: { id: 'github_create_repo', action: 'github_create_repo', params: { name, private: text.includes('private') } } }];
   }
 
   return [{ action: 'clarify', description: 'I can currently execute GitHub repo queries, CI/deployment status, and approved deploy workflow runs. Try “deploy latest to staging” or “show production status”.', service: 'chat', requiresApproval: false }];
@@ -138,7 +183,7 @@ function handleDiagnosticIntent(intent: UserIntent): ExecutionStep[] {
       description: 'Inspect recent workflow runs and deployments for failures',
       service: 'github',
       requiresApproval: false,
-      executable: { action: 'diagnose_deployment', params: { repo: extractRepoName(intent.description) } },
+      executable: { id: 'diagnose_deployment', action: 'diagnose_deployment', params: { repo: extractRepoName(intent.description) } },
     }];
   }
 

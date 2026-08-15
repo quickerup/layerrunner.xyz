@@ -352,9 +352,9 @@ async function executeAndFormat(
   const executor = new ActionExecutor(env, userGithubToken);
   lines.push('\n*Execution Result*:');
 
+  const results = await executor.executePlan(executableSteps);
   for (const executable of executableSteps) {
-    const result = await executor.executeAction(executable.action, executable.params);
-    lines.push(formatExecutionResult(executable.action, result));
+    lines.push(formatExecutionResult(executable.action, results.get(executable.id)!));
   }
 
   return lines.join('\n');
