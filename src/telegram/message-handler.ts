@@ -154,6 +154,21 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    // Withdraws accumulated TON revenue from the sale contract — every TON
+    // someone pays to buy LYR sits in the contract itself until this is
+    // run. Only the contract's actual admin wallet can sign a withdrawal
+    // that succeeds; anyone else's transaction just fails on-chain.
+    if (/^\s*\/collect\b/.test(text)) {
+      if (profile.class !== 'deployer') {
+        await sendTelegramMessage(env, chat.id, formatPermissionDenied(profile));
+        return;
+      }
+      await sendTelegramMessageWithButtons(env, chat.id, '💰 Connect the admin wallet and sign to withdraw accumulated TON revenue:', [
+        [{ text: 'Collect TON revenue', url: 'https://layerrunners.xyz/admin-collect' }],
+      ]);
+      return;
+    }
+
     const intent = await parseIntent(text, createIntentProvider(env));
     const plan = generatePlan(intent);
     const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
