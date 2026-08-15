@@ -270,9 +270,30 @@ function summarizePlan(plan: ExecutionPlan): string {
   return `${plan.steps.length} step(s), risk ${plan.riskLevel}, estimated ${plan.estimatedDuration}`;
 }
 
+// Turns a known GitHub API failure into something the person on the other
+// end of the chat can actually act on, instead of a raw status code --
+// errorStatus is only set when the failure was a classifiable
+// GitHubApiError (see services/github.ts), so anything else (StepRef
+// resolution errors, a failed health-check fetch, ...) just falls through
+// to the underlying message unchanged.
+function translateExecutionError(result: ExecutionResult): string {
+  switch (result.errorStatus) {
+    case 401:
+      return "GitHub rejected the token as invalid or expired. If you connected your own with `/connect_github`, send a fresh one there. If this is the shared account, it needs to be replaced by whoever runs the bot.";
+    case 403:
+      return /rate limit/i.test(result.error ?? '')
+        ? 'Hit a GitHub rate limit — wait a few minutes and try again.'
+        : "GitHub rejected this for lack of permission. If you're on the shared token, connect your own with more access via `/connect_github`; otherwise check the token's scopes.";
+    case 404:
+      return "Repo not found, or the current token can't see it -- GitHub hides private repos a token has no access to rather than saying so directly. Double check the repo name, or connect a token with access via `/connect_github`.";
+    default:
+      return md(result.error, 'Unknown error');
+  }
+}
+
 export function formatExecutionResult(action: string, result: ExecutionResult): string {
   if (!result.success) {
-    return `❌ ${action} failed: ${md(result.error, 'Unknown error')}`;
+    return `❌ ${action} failed: ${translateExecutionError(result)}`;
   }
 
   if (action === 'github_list_repos' && Array.isArray(result.output)) {

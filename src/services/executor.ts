@@ -5,12 +5,16 @@
 
 import { Env } from '../config';
 import { ExecutableAction, StepRef } from '../core/planner';
-import { GitHubService, GitHubWorkflowRun } from './github';
+import { GitHubApiError, GitHubService, GitHubWorkflowRun } from './github';
 
 export interface ExecutionResult {
   success: boolean;
   output: Record<string, any>;
   error?: string;
+  /** HTTP status of the underlying failure, when it's a classifiable API
+   *  error (e.g. GitHubApiError) -- lets callers give actionable guidance
+   *  (bad token, no repo access, ...) instead of just the raw message. */
+  errorStatus?: number;
   executionTime: number;
 }
 
@@ -104,6 +108,7 @@ export class ActionExecutor {
         success: false,
         output: {},
         error: error instanceof Error ? error.message : 'Unknown error',
+        errorStatus: error instanceof GitHubApiError ? error.status : undefined,
         executionTime: Date.now() - startTime,
       };
     }

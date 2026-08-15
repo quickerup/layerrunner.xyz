@@ -35,6 +35,13 @@ export interface GitHubCreateRepoRequest {
   auto_init?: boolean;
 }
 
+export class GitHubApiError extends Error {
+  constructor(readonly status: number, readonly path: string, readonly body: string, message: string) {
+    super(message);
+    this.name = 'GitHubApiError';
+  }
+}
+
 export class GitHubService {
   private readonly baseUrl = 'https://api.github.com';
 
@@ -95,7 +102,12 @@ export class GitHubService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`GitHub API error: ${response.status} ${response.statusText} on ${path}${text ? ` - ${text}` : ''}`);
+      throw new GitHubApiError(
+        response.status,
+        path,
+        text,
+        `GitHub API error: ${response.status} ${response.statusText} on ${path}${text ? ` - ${text}` : ''}`
+      );
     }
 
     if (init.expectJson === false || response.status === 204) {
