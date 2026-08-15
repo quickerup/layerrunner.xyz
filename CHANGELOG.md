@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2] - 2026-08-15
+
+### AI-Driven Planning
+
+#### Changed
+- 🤖 The bot's intent/planning pipeline was almost entirely regex: hand-written keyword patterns picked the action (`github_deploy`, `project_status`, etc.) and extracted entities (repo name, environment, ref) from the raw message, with Cloudflare Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`, already bound as `env.AI`) used only as a narrow secondary check on a coarse `query`/`action`/`diagnostic` label. Anything phrased outside the regex's expected shapes fell through to a generic clarify response even when the request was unambiguous to a human. `src/services/ai-provider.ts`'s `AIProvider` now exposes `extractPlan(input)` — one Workers AI call that does classification, entity extraction, and action selection together, returning a structured `{action, params, confidence}` matched 1:1 against `src/services/executor.ts`'s real action set. `src/core/planner.ts`'s `generatePlan` tries this first and only falls back to the original (unchanged) regex pipeline when there's no AI provider, the call fails, or confidence is below 0.55 — so a bad Workers AI response degrades to today's behavior, not a regression. Same one-AI-call-per-message cost/latency as before, just doing more with it.
+
 ## [0.4.1] - 2026-08-15
 
 ### Buy-LYR Widget: Fixed Short-Payout Bug

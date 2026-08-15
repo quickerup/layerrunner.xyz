@@ -21,7 +21,7 @@ import { ExecutableAction, ExecutionPlan, generatePlan } from './planner';
 import { CLASS_INFO, UserProfile, formatProfile, getUserProfile, saveUserProfile } from './profile';
 import { FREE_TRIAL_CREDIT_NANO, creditBalance } from './metering';
 import { reconcileVaultDeposits } from './wallet-link';
-import { createIntentProvider } from '../services/ai-provider';
+import { createPlanProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
 import { formatLyr, initTonCenterService } from '../services/ton';
 import { escapeMarkdown } from './markdown';
@@ -86,8 +86,8 @@ export async function runChatEngine(
     return { kind: 'text', text: lines.join('\n') };
   }
 
-  const intent = await parseIntent(text, createIntentProvider(env));
-  const plan = generatePlan(intent);
+  const intent = parseIntent(text);
+  const plan = await generatePlan(intent, createPlanProvider(env));
   const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
 
   for (const executable of executableSteps) {
