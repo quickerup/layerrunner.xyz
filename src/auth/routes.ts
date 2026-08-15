@@ -8,7 +8,9 @@
 
 import { Env } from '../config';
 import { telegramIdentity } from '../core/identity';
-import { getUserProfile } from '../core/profile';
+import { ensureProfile } from '../core/chat-engine';
+import { getBalance } from '../core/metering';
+import { formatLyr } from '../services/ton';
 import {
   clearSessionCookieHeader,
   mintSession,
@@ -53,8 +55,9 @@ export async function handleGetSession(request: Request, env: Env): Promise<Resp
   const payload = await verifySession(env, readSessionCookie(request));
   if (!payload) return json({ ok: false });
 
-  const profile = await getUserProfile(env, payload.identity);
-  return json({ ok: true, identity: payload.identity, provider: payload.provider, profile: profile ?? null });
+  const profile = await ensureProfile(env, payload.identity);
+  const balance = formatLyr(await getBalance(env, payload.identity));
+  return json({ ok: true, identity: payload.identity, provider: payload.provider, profile, balance });
 }
 
 export async function handleLogout(): Promise<Response> {

@@ -14,7 +14,7 @@
  */
 
 import { Env } from '../config';
-import { createApprovalRequest, formatApprovalMessage } from './approval';
+import { approveRequest, createApprovalRequest, formatApprovalMessage, getApprovalRequest, rejectRequest } from './approval';
 import { checkAndReserve, commitReservation, formatTopUpPrompt, getBalance, releaseReservation } from './metering';
 import { parseIntent } from './intent-parser';
 import { ExecutableAction, ExecutionPlan, generatePlan } from './planner';
@@ -49,7 +49,7 @@ export interface ChatEngineOptions {
 // nobody explicitly saw and chose a role here, and login only proves
 // "has a Telegram account" today (GitHub/Google logins later prove even
 // less), not vetted trust for real deploys against the shared GitHub token.
-async function ensureProfile(env: Env, identity: string): Promise<UserProfile> {
+export async function ensureProfile(env: Env, identity: string): Promise<UserProfile> {
   const existing = await getUserProfile(env, identity);
   if (existing) return existing;
 
@@ -154,6 +154,63 @@ export async function runChatEngine(
     await releaseReservation(env, identity, metering.reservationId);
     throw error;
   }
+}
+
+export type ApprovalResolution =
+  | { kind: 'not_pending' }
+  | { kind: 'forbidden' }
+  | { kind: 'reject_failed' }
+  | { kind: 'approve_failed' }
+  | { kind: 'rejected'; requestId: string; chatId?: number }
+  | { kind: 'approved_empty'; requestId: string; chatId?: number }
+  | { kind: 'executed'; requestId: string; chatId?: number; text: string };
+
+// Shared by telegram/callback-handler.ts (inline-keyboard Approve/Reject)
+// and POST /api/approve (web) -- same permission check, same
+// reserve/commit/release/execute sequence, so the two channels can't drift.
+// `chatId` on the successful variants is just passed through from the
+// approval request for Telegram callers to notify; web callers ignore it.
+export async function resolveApproval(
+  env: Env,
+  requestId: string,
+  actingIdentity: string,
+  action: 'approve' | 'reject'
+): Promise<ApprovalResolution> {
+  const request = await getApprovalRequest(env, requestId);
+  if (!request || request.status !== 'pending') return { kind: 'not_pending' };
+
+  const isRequester = actingIdentity === request.identity;
+  const actingProfile = isRequester ? undefined : await getUserProfile(env, actingIdentity);
+  const isReviewer = actingProfile?.class === 'reviewer';
+  if (!isRequester && !isReviewer) return { kind: 'forbidden' };
+
+  const requesterIdentity = request.identity;
+
+  if (action === 'reject') {
+    if (!await rejectRequest(env, requestId)) return { kind: 'reject_failed' };
+    await releaseReservation(env, requesterIdentity, request.meteringReservationId);
+    return { kind: 'rejected', requestId, chatId: request.chatId };
+  }
+
+  if (!await approveRequest(env, requestId)) return { kind: 'approve_failed' };
+
+  if (request.executableSteps.length === 0) {
+    await releaseReservation(env, requesterIdentity, request.meteringReservationId);
+    return { kind: 'approved_empty', requestId, chatId: request.chatId };
+  }
+
+  await commitReservation(env, requesterIdentity, request.meteringReservationId);
+
+  const userGithubToken = await getUserSecret(env, requesterIdentity, GITHUB_TOKEN_SECRET);
+  const executor = new ActionExecutor(env, userGithubToken);
+  const lines = [`✅ Approved request \`${request.id}\`.`, '', '*Execution Result*:'];
+
+  const results = await executor.executePlan(request.executableSteps);
+  for (const executable of request.executableSteps) {
+    lines.push(formatExecutionResult(executable.action, results.get(executable.id)!));
+  }
+
+  return { kind: 'executed', requestId, chatId: request.chatId, text: lines.join('\n') };
 }
 
 async function executeAndFormat(

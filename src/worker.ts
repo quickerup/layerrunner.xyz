@@ -3,6 +3,7 @@ import { ApprovalStore } from './core/approval';
 import { UserLedger } from './core/metering';
 import { handleTelegramWebhook } from './telegram/webhook';
 import { handleGetSession, handleLogout, handleTelegramAuthCallback } from './auth/routes';
+import { handleApiApprove, handleApiChat } from './api/routes';
 import { Router } from 'itty-router';
 
 const router = Router();
@@ -14,6 +15,10 @@ router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramW
 router.post('/auth/telegram/callback', (request: Request, env: Env) => handleTelegramAuthCallback(request, env));
 router.post('/auth/logout', () => handleLogout());
 router.get('/api/session', (request: Request, env: Env) => handleGetSession(request, env));
+
+// Web chat -- same pipeline the Telegram bot runs, via core/chat-engine.ts
+router.post('/api/chat', (request: Request, env: Env) => handleApiChat(request, env));
+router.post('/api/approve', (request: Request, env: Env) => handleApiApprove(request, env));
 
 // Initialize webhook (temporary - call once then remove)
 router.get('/init', async (request: Request, env: Env) => {
