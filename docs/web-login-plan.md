@@ -89,7 +89,7 @@ on either channel.
 `/connect_github`/`/disconnect_github`, `/deploy`, `/collect`. None of
 these were in scope for phase 3.
 
-### ⬜ Phase 4 — GitHub OAuth login (not started)
+### ✅ Phase 4 — GitHub OAuth login (done)
 **Needs first:** register a GitHub OAuth App
 (github.com/settings/developers → OAuth Apps → New), Authorization
 callback URL `https://layerrunners.xyz/auth/github/callback`. Set
