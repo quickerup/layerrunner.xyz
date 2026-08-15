@@ -41,6 +41,10 @@ export async function handleTelegramAuthCallback(request: Request, env: Env): Pr
     return json({ ok: false, error: 'Could not verify Telegram login' }, { status: 401 });
   }
 
+  if (!env.SESSION_SIGNING_KEY) {
+    return json({ ok: false, error: 'Web login is not configured yet.' }, { status: 503 });
+  }
+
   const token = await mintSession(env, telegramIdentity(data.id), 'telegram');
   return json({ ok: true }, { status: 200, headers: { 'Set-Cookie': sessionCookieHeader(token) } });
 }
