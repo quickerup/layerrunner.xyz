@@ -68,14 +68,37 @@ async function callTelegramApi(env: Env, method: string, params: Record<string, 
     throw new Error('TELEGRAM_BOT_TOKEN is not configured');
   }
 
-  const response = await fetch(`${TELEGRAM_API_BASE}${botToken}/${method}`, {
+  const url = `${TELEGRAM_API_BASE}${botToken}/${method}`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Telegram API error: ${JSON.stringify(error)}`);
+  if (response.ok) return;
+
+  const error = await response.json();
+
+  // A Markdown parse error means *something* in the text wasn't escaped
+  // right -- rather than the whole message silently vanishing behind a
+  // generic error, retry once as plain text so the user still gets a
+  // response. The full text is logged so the actual unescaped field can
+  // still be found and fixed properly.
+  if (params.parse_mode && isMarkdownParseError(error)) {
+    console.error('Telegram Markdown parse error, retrying as plain text:', JSON.stringify(error), '| text:', params.text);
+    const retryResponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...params, parse_mode: undefined }),
+    });
+    if (retryResponse.ok) return;
+    const retryError = await retryResponse.json();
+    throw new Error(`Telegram API error: ${JSON.stringify(retryError)}`);
   }
+
+  throw new Error(`Telegram API error: ${JSON.stringify(error)}`);
+}
+
+function isMarkdownParseError(error: any): boolean {
+  return error?.error_code === 400 && typeof error?.description === 'string' && /can't parse entities/i.test(error.description);
 }
