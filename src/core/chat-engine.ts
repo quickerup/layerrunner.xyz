@@ -21,7 +21,7 @@ import { ExecutableAction, ExecutionPlan, generatePlan } from './planner';
 import { CLASS_INFO, UserProfile, formatProfile, getUserProfile, saveUserProfile } from './profile';
 import { FREE_TRIAL_CREDIT_NANO, creditBalance } from './metering';
 import { reconcileVaultDeposits } from './wallet-link';
-import { createPlanProvider } from '../services/ai-provider';
+import { AIProvider, createPlanProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
 import { formatLyr, initTonCenterService } from '../services/ton';
 import { escapeMarkdown } from './markdown';
@@ -87,7 +87,8 @@ export async function runChatEngine(
   }
 
   const intent = parseIntent(text);
-  const plan = await generatePlan(intent, createPlanProvider(env));
+  const aiProvider = createPlanProvider(env);
+  const plan = await generatePlan(intent, aiProvider);
   const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
 
   for (const executable of executableSteps) {
@@ -148,7 +149,8 @@ export async function runChatEngine(
   try {
     await commitReservation(env, identity, metering.reservationId);
     const userGithubToken = await getUserSecret(env, identity, GITHUB_TOKEN_SECRET);
-    const text = await executeAndFormat(env, plan, executableSteps, userGithubToken);
+    const raw = await executeAndFormat(env, plan, executableSteps, userGithubToken);
+    const text = await maybeMakeConversational(aiProvider, raw);
     return { kind: 'text', text };
   } catch (error) {
     await releaseReservation(env, identity, metering.reservationId);
@@ -211,6 +213,19 @@ export async function resolveApproval(
   }
 
   return { kind: 'executed', requestId, chatId: request.chatId, text: lines.join('\n') };
+}
+
+// Restyles an already-correct, already-templated execution report into
+// warmer chat prose -- see AIProvider.rewriteConversationally. Approval
+// prompts, permission-denied, top-up, and help text stay templated on
+// purpose: those need to say exactly what they say, not be paraphrased.
+async function maybeMakeConversational(aiProvider: AIProvider, rawText: string): Promise<string> {
+  try {
+    return await aiProvider.rewriteConversationally(rawText);
+  } catch (error) {
+    console.warn('Conversational rewrite failed; using templated text.', error);
+    return rawText;
+  }
 }
 
 async function executeAndFormat(

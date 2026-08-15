@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4] - 2026-08-15
+
+### Conversational Response Rewriting
+
+#### Added
+- 💬 Execution results (the actual "here's your repo list / deployment status / CI runs" replies) were a wall of templated markdown bullet points. `AIProvider` gains `rewriteConversationally(rawText)` -- implemented on both `GeminiProvider` and `CloudflareAIProvider` (same primary/backup/fallback chain as planning), at low temperature (0.3) and instructed to *restyle only*: preserve every fact, name, count, and URL exactly, never add or guess anything, just turn the bullet list into natural chat prose. `chat-engine.ts`'s `runChatEngine` runs the already-correct templated text through this before returning it, and falls back to the raw templated text unchanged on any failure (no provider, network error, empty response) -- so a bad AI call never blocks or corrupts a response, just leaves it as templated as before. Approval prompts, permission-denied, top-up, and help messages are deliberately left alone -- those need to state exactly what they state, not be paraphrased.
+
 ## [0.4.3] - 2026-08-15
 
 ### Gemini as Primary Planner Backend

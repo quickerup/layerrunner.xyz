@@ -39,6 +39,12 @@ export interface AIPlanExtraction {
 
 export interface AIProvider {
   extractPlan(input: string): Promise<AIPlanExtraction>;
+  // Rewrites an already-correct, already-templated response (a fact sheet
+  // of exact repo names/counts/statuses/URLs from formatExecutionResult) in
+  // a warmer, more natural chat tone. This never generates new claims --
+  // only restyles ones the caller already verified -- so a bad or missing
+  // provider just means the caller keeps the raw templated text.
+  rewriteConversationally(rawText: string): Promise<string>;
 }
 
 const ACTION_GUIDE = [
@@ -68,6 +74,25 @@ function buildExtractionPrompt(input: string): string {
     'confidence is a number from 0 to 1 reflecting how sure you are action+params are correct.',
     'clarifyMessage is required (a short string) only when action is "clarify"; omit it otherwise.',
     `Request: ${JSON.stringify(input)}`,
+  ].join('\n');
+}
+
+// Shared between every backend's rewriteConversationally. Deliberately
+// constrains the model to restyling, not authoring -- it must not add,
+// drop, or guess at any fact that isn't already in rawText.
+function buildRewritePrompt(rawText: string): string {
+  return [
+    'You are Layer Runners, a bot chatting with someone about their GitHub-backed project.',
+    'Rewrite the following bot response as warm, natural chat prose -- like a helpful teammate reporting back, not a report generator.',
+    'Rules:',
+    '- Preserve every fact exactly: repo names, counts, statuses, branch/ref names, URLs, error messages, and numbers must all still be present and unchanged.',
+    '- Do not add any fact, claim, or speculation that is not already in the original text.',
+    '- You may reorganize into flowing sentences instead of a bullet list, and drop markdown formatting characters (*, _, #) since they will not render.',
+    '- Keep it concise -- a few sentences, not a wall of text.',
+    '- Do not add a greeting or sign-off.',
+    '',
+    'Original response:',
+    rawText,
   ].join('\n');
 }
 
@@ -157,6 +182,32 @@ class GeminiProvider implements AIProvider {
 
     return validateExtraction(JSON.parse(text));
   }
+
+  async rewriteConversationally(rawText: string): Promise<string> {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: buildRewritePrompt(rawText) }] }],
+        // Low temperature -- this is a faithful restyle, not creative writing.
+        generationConfig: { temperature: 0.3 },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as any;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new Error('Gemini returned no parseable text');
+    }
+
+    return text.trim();
+  }
 }
 
 // Backup planner backend -- Cloudflare Workers AI, already bound as env.AI
@@ -185,6 +236,27 @@ class CloudflareAIProvider implements AIProvider {
     const jsonText = text.match(/\{[\s\S]*\}/)?.[0] ?? text;
     return validateExtraction(JSON.parse(jsonText));
   }
+
+  async rewriteConversationally(rawText: string): Promise<string> {
+    if (!this.env.AI) {
+      throw new Error('Workers AI binding is not configured');
+    }
+
+    const result = await this.env.AI.run(this.model, {
+      messages: [
+        { role: 'system', content: 'You restyle chat responses to sound natural, without changing any facts.' },
+        { role: 'user', content: buildRewritePrompt(rawText) },
+      ],
+      max_tokens: 500,
+      temperature: 0.3,
+    });
+
+    const text = extractText(result).trim();
+    if (!text) {
+      throw new Error('Workers AI returned no parseable text');
+    }
+    return text;
+  }
 }
 
 // Tries the primary backend; on any failure (unset, network error, bad
@@ -203,6 +275,16 @@ class CompositeAIProvider implements AIProvider {
       return this.backup.extractPlan(input);
     }
   }
+
+  async rewriteConversationally(rawText: string): Promise<string> {
+    try {
+      return await this.primary.rewriteConversationally(rawText);
+    } catch (error) {
+      if (!this.backup) throw error;
+      console.warn('Primary AI provider failed; falling back to backup provider.', error);
+      return this.backup.rewriteConversationally(rawText);
+    }
+  }
 }
 
 export function createPlanProvider(env: Env): AIProvider {
@@ -218,6 +300,9 @@ export function createPlanProvider(env: Env): AIProvider {
 
   return {
     async extractPlan(): Promise<AIPlanExtraction> {
+      throw new Error('No AI provider configured');
+    },
+    async rewriteConversationally(): Promise<string> {
       throw new Error('No AI provider configured');
     },
   };
