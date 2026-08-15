@@ -50,21 +50,43 @@ const MIN_TONS_FOR_STORAGE : int = 10000000; // 0.01 TON
 const GAS_CONSUMPTION      : int = 15000000; // 0.015 TON
 
 // ----------------------------------------------------------------
-//  Every SODA jetton wallet has the same code and is deployed at an
-//  address deterministically derived from (code, initial data). Initial
-//  data always has balance = 0 — the wallet's real-time balance is
-//  irrelevant to its address, which is fixed forever at first deploy.
+//  A jetton wallet is deployed at an address deterministically derived
+//  from (code, initial data). Initial data always has balance = 0 — the
+//  wallet's real-time balance is irrelevant to its address, which is
+//  fixed forever at first deploy.
+//
+//  DATA LAYOUT — this is the ton-blockchain/token-contract reference
+//  implementation's layout (balance, owner, jetton_master, and the
+//  wallet's OWN code stored as a 4th field/ref), not this codebase's own
+//  simpler 3-field layout (no code ref) that soda-jetton-wallet.tolk
+//  uses for itself. TEP-74 standardizes the wire *messages*, not the
+//  storage layout, so there's no universal formula here — this one was
+//  chosen because it's what the actual jetton this contract deals with
+//  (LYR, layerrunners.xyz) uses, verified directly against its live
+//  on-chain wallet data (not assumed): a real LYR holder's wallet
+//  address only reproduces correctly with this exact 4-field layout,
+//  not the 3-field one. It's also the single most common layout among
+//  real-world jettons generally (most projects deploy this reference
+//  implementation or a close fork of it) — but a jetton using some
+//  other custom layout would compute a wrong address here. That's a
+//  safe failure mode for approveJetton (that jetton's purchases just
+//  never match and never succeed — see lyr-sale.tolk's
+//  ERR_NOT_APPROVED_JETTON path), not a fund-misdirection one — the
+//  wrong-computed address is never itself the destination of value,
+//  only a dict key that would fail to match the real wallet's actual
+//  sender address.
 // ----------------------------------------------------------------
-fun calculateJettonWalletData(ownerAddress: address, jettonMasterAddress: address): cell {
+fun calculateJettonWalletData(ownerAddress: address, jettonMasterAddress: address, jettonWalletCode: cell): cell {
     return beginCell()
         .storeCoins(0)
         .storeAddress(ownerAddress)
         .storeAddress(jettonMasterAddress)
+        .storeRef(jettonWalletCode)
         .endCell();
 }
 
 fun calculateJettonWalletAddress(ownerAddress: address, jettonMasterAddress: address, jettonWalletCode: cell): address {
-    val dataHash = StateInit.calcHashCodeData(jettonWalletCode, calculateJettonWalletData(ownerAddress, jettonMasterAddress));
+    val dataHash = StateInit.calcHashCodeData(jettonWalletCode, calculateJettonWalletData(ownerAddress, jettonMasterAddress, jettonWalletCode));
     return address.fromWorkchainAndHash(0, dataHash);
 }
 

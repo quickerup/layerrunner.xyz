@@ -78,7 +78,7 @@ fun handleMint(sender: address, msgValue: int, inMsgBody: slice) {
     assert(totalSupply + jettonAmount <= maxSupply, ERR_EXCEEDS_MAX_SUPPLY);
 
     val masterAddress = contract.getAddress();
-    val walletData = calculateJettonWalletData(toAddress, masterAddress);
+    val walletData = calculateJettonWalletData(toAddress, masterAddress, jettonWalletCode);
     val walletAddress = calculateJettonWalletAddress(toAddress, masterAddress, jettonWalletCode);
 
     // StateInit cell: split_depth:none, special:none, code:present(ref), data:present(ref), library:none.

@@ -30,24 +30,29 @@ tolk 1.4.2
 import "./jetton-utils"
 
 // ----------------------------------------------------------------
-//  Storage: balance, owner, master. Wallet code is identical across
-//  every SODA wallet — read via contract.getCode() when needed, never
-//  stored, so it can't drift from the deployed code.
+//  Storage: balance, owner, master, own code (4-field standard
+//  reference layout — see jetton-utils.tolk's comment on why this
+//  matters for on-chain address derivation). The code field duplicates
+//  contract.getCode(), matching the reference implementation this
+//  fixture mirrors — not used for anything besides being part of the
+//  address-defining data cell.
 // ----------------------------------------------------------------
-fun loadStorage(): (int, address, address) {
+fun loadStorage(): (int, address, address, cell) {
     var ds = contract.getData().beginParse();
     val balance              = ds.loadCoins();
     val ownerAddress         = ds.loadAddress();
     val jettonMasterAddress  = ds.loadAddress();
-    return (balance, ownerAddress, jettonMasterAddress);
+    val walletCode            = ds.loadRef();
+    return (balance, ownerAddress, jettonMasterAddress, walletCode);
 }
 
-fun saveStorage(balance: int, ownerAddress: address, jettonMasterAddress: address) {
+fun saveStorage(balance: int, ownerAddress: address, jettonMasterAddress: address, walletCode: cell) {
     contract.setData(
         beginCell()
             .storeCoins(balance)
             .storeAddress(ownerAddress)
             .storeAddress(jettonMasterAddress)
+            .storeRef(walletCode)
             .endCell()
     );
 }
@@ -62,7 +67,7 @@ fun saveStorage(balance: int, ownerAddress: address, jettonMasterAddress: addres
 //  wallet.
 // ----------------------------------------------------------------
 fun handleTransfer(sender: address, msgValue: int, inMsgBody: slice) {
-    var (balance, ownerAddress, jettonMasterAddress) = loadStorage();
+    var (balance, ownerAddress, jettonMasterAddress, walletCode) = loadStorage();
     assert(sender.bitsEqual(ownerAddress), ERR_NOT_OWNER);
 
     val queryId = inMsgBody.loadUint(64);
@@ -83,10 +88,9 @@ fun handleTransfer(sender: address, msgValue: int, inMsgBody: slice) {
     assert(msgValue > forwardTonAmount + fwdCount * GAS_CONSUMPTION, ERR_INSUFFICIENT_GAS);
 
     balance -= jettonAmount;
-    saveStorage(balance, ownerAddress, jettonMasterAddress);
+    saveStorage(balance, ownerAddress, jettonMasterAddress, walletCode);
 
-    val walletCode = contract.getCode();
-    val destWalletData = calculateJettonWalletData(destination, jettonMasterAddress);
+    val destWalletData = calculateJettonWalletData(destination, jettonMasterAddress, walletCode);
     val destWalletAddress = calculateJettonWalletAddress(destination, jettonMasterAddress, walletCode);
 
     // StateInit cell: split_depth:none, special:none, code:present(ref), data:present(ref), library:none.
@@ -132,7 +136,7 @@ fun handleTransfer(sender: address, msgValue: int, inMsgBody: slice) {
 //  genuine sibling wallet can credit this wallet).
 // ----------------------------------------------------------------
 fun handleInternalTransfer(sender: address, msgValue: int, inMsgBody: slice) {
-    var (balance, ownerAddress, jettonMasterAddress) = loadStorage();
+    var (balance, ownerAddress, jettonMasterAddress, walletCode) = loadStorage();
 
     val queryId = inMsgBody.loadUint(64);
     val jettonAmount = inMsgBody.loadCoins();
@@ -142,12 +146,12 @@ fun handleInternalTransfer(sender: address, msgValue: int, inMsgBody: slice) {
     val forwardPayload = inMsgBody.loadForwardPayload();
 
     val isFromMaster = sender.bitsEqual(jettonMasterAddress);
-    val expectedSiblingWallet = calculateJettonWalletAddress(fromAddress, jettonMasterAddress, contract.getCode());
+    val expectedSiblingWallet = calculateJettonWalletAddress(fromAddress, jettonMasterAddress, walletCode);
     val isFromSiblingWallet = sender.bitsEqual(expectedSiblingWallet);
     assert(isFromMaster || isFromSiblingWallet, ERR_NOT_VALID_SENDER);
 
     balance += jettonAmount;
-    saveStorage(balance, ownerAddress, jettonMasterAddress);
+    saveStorage(balance, ownerAddress, jettonMasterAddress, walletCode);
 
     if (forwardTonAmount > 0) {
         val notificationBody = beginCell()
@@ -199,7 +203,7 @@ fun handleInternalTransfer(sender: address, msgValue: int, inMsgBody: slice) {
 //  restores the balance (same reasoning as transfer's internal_transfer).
 // ----------------------------------------------------------------
 fun handleBurn(sender: address, msgValue: int, inMsgBody: slice) {
-    var (balance, ownerAddress, jettonMasterAddress) = loadStorage();
+    var (balance, ownerAddress, jettonMasterAddress, walletCode) = loadStorage();
     assert(sender.bitsEqual(ownerAddress), ERR_NOT_OWNER);
 
     val queryId = inMsgBody.loadUint(64);
@@ -215,7 +219,7 @@ fun handleBurn(sender: address, msgValue: int, inMsgBody: slice) {
     assert(msgValue > GAS_CONSUMPTION, ERR_INSUFFICIENT_GAS);
 
     balance -= jettonAmount;
-    saveStorage(balance, ownerAddress, jettonMasterAddress);
+    saveStorage(balance, ownerAddress, jettonMasterAddress, walletCode);
 
     val burnNotificationBody = beginCell()
         .storeUint(OP_BURN_NOTIFICATION, 32)
@@ -250,9 +254,9 @@ fun handleBounce(inMsgBody: slice) {
     if (op == OP_INTERNAL_TRANSFER || op == OP_BURN_NOTIFICATION) {
         inMsgBody.loadUint(64); // queryId
         val amount = inMsgBody.loadCoins();
-        var (balance, ownerAddress, jettonMasterAddress) = loadStorage();
+        var (balance, ownerAddress, jettonMasterAddress, walletCode) = loadStorage();
         balance += amount;
-        saveStorage(balance, ownerAddress, jettonMasterAddress);
+        saveStorage(balance, ownerAddress, jettonMasterAddress, walletCode);
     }
 }
 
@@ -287,6 +291,6 @@ fun onInternalMessage(myBalance: int, msgValue: int, inMsgFull: cell, inMsgBody:
 //  Get methods
 // ----------------------------------------------------------------
 get fun get_wallet_data(): (int, address, address, cell) {
-    val (balance, ownerAddress, jettonMasterAddress) = loadStorage();
-    return (balance, ownerAddress, jettonMasterAddress, contract.getCode());
+    val (balance, ownerAddress, jettonMasterAddress, walletCode) = loadStorage();
+    return (balance, ownerAddress, jettonMasterAddress, walletCode);
 }

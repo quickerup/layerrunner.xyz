@@ -16,8 +16,18 @@ function storeForwardPayload(builder, payloadCell) {
   return builder.storeUint(0, 1);
 }
 
-function walletDataCell(ownerAddress, jettonMasterAddress) {
-  return beginCell().storeCoins(0).storeAddress(ownerAddress).storeAddress(jettonMasterAddress).endCell();
+/** Standard reference-implementation layout: balance, owner, master, and
+ *  the wallet's OWN code stored as a 4th ref -- matches jetton-utils.tolk's
+ *  calculateJettonWalletData, verified against the real deployed LYR
+ *  jetton-wallet's actual on-chain data (not the simpler 3-field layout
+ *  this codebase's own SODA wallet uses for itself). */
+function walletDataCell(ownerAddress, jettonMasterAddress, jettonWalletCode) {
+  return beginCell()
+    .storeCoins(0)
+    .storeAddress(ownerAddress)
+    .storeAddress(jettonMasterAddress)
+    .storeRef(jettonWalletCode)
+    .endCell();
 }
 
 class JettonWallet {
@@ -27,14 +37,14 @@ class JettonWallet {
   }
 
   static createFromConfig(config, code, workchain = 0) {
-    const data = walletDataCell(config.ownerAddress, config.jettonMasterAddress);
+    const data = walletDataCell(config.ownerAddress, config.jettonMasterAddress, code);
     const init = { code, data };
     const address = contractAddress(workchain, init);
     return new JettonWallet(address, init);
   }
 
   static computeAddress(ownerAddress, jettonMasterAddress, code, workchain = 0) {
-    const data = walletDataCell(ownerAddress, jettonMasterAddress);
+    const data = walletDataCell(ownerAddress, jettonMasterAddress, code);
     return contractAddress(workchain, { code, data });
   }
 
