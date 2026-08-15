@@ -19,12 +19,20 @@ export const LYR_WALLET_CODE_BOC =
 export const LYR_DECIMALS = 9;
 
 /**
- * Live sale contract address once deployed via /admin-deploy — null means
- * "not deployed yet," which the buy widget shows as unavailable rather
- * than sending a purchase to a wrong/nonexistent address. Update this
- * after a real deploy (testnet first, then mainnet as a separate,
- * deliberate step).
+ * Live LYR sale contract, deployed via /admin-deploy. Verified on-chain
+ * (code hash A1kOkEDmTHp7CGOpkKadDS8GsbKwXBWgkhPoRiICh9w=, matching the
+ * locally compiled contracts/lyr-sale.tolk exactly) and confirmed via
+ * get_sale_data: adminAddress is the deploying wallet, lyrMasterAddress
+ * is the real LYR jetton master, lyrPerTon=100, paused=0.
+ *
+ * (TonCenter's address explorer mislabels this address's interfaces as
+ * nft_auction_v1/nft_sale — that's a false positive from its heuristic
+ * detector, not the real bytecode; the code hash match above is the
+ * actual proof.)
+ *
+ * Vault wallet (fund this with real LYR before purchases can pay out):
+ * EQDSPDwi7wBMd83OPGLaqaMDP-yH0LZPC453cqhi29_VpK0a
  */
-export const SALE_CONTRACT_ADDRESS: string | null = null;
+export const SALE_CONTRACT_ADDRESS: string | null = "EQDcvHpDqQFe50_FS5dGurcgP4z5FpAREAzidFQNaKKJDnnZ";
 
 export const DEFAULT_LYR_PER_TON = 100;
