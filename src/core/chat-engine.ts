@@ -373,7 +373,7 @@ function formatProjectStatus(output: any, diagnostic: boolean): string {
 
   if (latestRun) {
     lines.push(`Latest CI: ${md(latestRun.name, 'Workflow')} — ${md(latestRun.status)}${latestRun.conclusion ? `/${md(latestRun.conclusion)}` : ''}`);
-    lines.push(`CI URL: ${latestRun.html_url}`);
+    lines.push(`CI URL: ${md(latestRun.html_url)}`);
   } else {
     lines.push('Latest CI: no workflow runs found');
   }
