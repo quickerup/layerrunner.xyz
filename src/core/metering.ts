@@ -1,5 +1,5 @@
 import { Env } from '../config';
-import { ledgerStub as sharedLedgerStub, telegramIdentity } from './identity';
+import { ledgerStub as sharedLedgerStub } from './identity';
 import { escapeMarkdown } from './markdown';
 import { ExecutionPlan } from './planner';
 import { formatLyr, buildDepositLink } from '../services/ton';
@@ -156,14 +156,14 @@ export class UserLedger {
   }
 }
 
-export async function checkAndReserve(env: Env, userId: number, plan: ExecutionPlan): Promise<MeteringResult> {
+export async function checkAndReserve(env: Env, identity: string, plan: ExecutionPlan): Promise<MeteringResult> {
   const unpriced = plan.steps.find(step => !(step.action in FEE_TABLE));
   if (unpriced) return { ok: false, costNano: BigInt(0), reason: 'unpriced_action' };
 
   const totalCostNano = plan.steps.reduce((sum, step) => sum + BigInt(FEE_TABLE[step.action]), BigInt(0));
   if (totalCostNano === BigInt(0)) return { ok: true, costNano: BigInt(0) };
 
-  const response = await ledgerStub(env, userId).fetch('https://ledger/reserve', {
+  const response = await ledgerStub(env, identity).fetch('https://ledger/reserve', {
     method: 'POST',
     body: JSON.stringify({ costNano: totalCostNano.toString() }),
   });
@@ -178,37 +178,37 @@ export async function checkAndReserve(env: Env, userId: number, plan: ExecutionP
   return { ok: true, costNano: totalCostNano, reservationId: body.reservationId };
 }
 
-export async function commitReservation(env: Env, userId: number, reservationId?: string): Promise<void> {
+export async function commitReservation(env: Env, identity: string, reservationId?: string): Promise<void> {
   if (!reservationId) return;
-  await settle(env, userId, reservationId, 'commit');
+  await settle(env, identity, reservationId, 'commit');
 }
 
-export async function releaseReservation(env: Env, userId: number, reservationId?: string): Promise<void> {
+export async function releaseReservation(env: Env, identity: string, reservationId?: string): Promise<void> {
   if (!reservationId) return;
-  await settle(env, userId, reservationId, 'release');
+  await settle(env, identity, reservationId, 'release');
 }
 
-export async function creditBalance(env: Env, userId: number, amountNano: bigint): Promise<void> {
-  const response = await ledgerStub(env, userId).fetch('https://ledger/credit', {
+export async function creditBalance(env: Env, identity: string, amountNano: bigint): Promise<void> {
+  const response = await ledgerStub(env, identity).fetch('https://ledger/credit', {
     method: 'POST',
     body: JSON.stringify({ amountNano: amountNano.toString() }),
   });
   if (!response.ok) throw new Error(`Ledger credit failed: ${response.status}`);
 }
 
-export async function getBalance(env: Env, userId: number): Promise<bigint> {
-  const response = await ledgerStub(env, userId).fetch('https://ledger/balance');
+export async function getBalance(env: Env, identity: string): Promise<bigint> {
+  const response = await ledgerStub(env, identity).fetch('https://ledger/balance');
   if (!response.ok) throw new Error(`Ledger balance failed: ${response.status}`);
   const body = await response.json() as { balanceNano: string };
   return BigInt(body.balanceNano);
 }
 
-export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringResult): string {
+export function formatTopUpPrompt(env: Env, depositMemo: string, metering: MeteringResult): string {
   if (metering.reason === 'unpriced_action') return '⚠️ This action is not priced yet, so I cannot run it safely.';
   const balance = metering.balanceNano ?? BigInt(0);
   const shortfall = metering.costNano > balance ? metering.costNano - balance : BigInt(0);
   const vault = env.VAULT_JETTON_WALLET;
-  const depositLink = vault ? buildDepositLink(vault, shortfall, userId) : null;
+  const depositLink = vault ? buildDepositLink(vault, shortfall, depositMemo) : null;
   return [
     `💎 *Top up required*`,
     `Balance: ${formatLyr(balance)}`,
@@ -220,12 +220,12 @@ export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringRe
   ].join('\n');
 }
 
-function ledgerStub(env: Env, userId: number): DurableObjectStub {
-  return sharedLedgerStub(env, telegramIdentity(userId));
+function ledgerStub(env: Env, identity: string): DurableObjectStub {
+  return sharedLedgerStub(env, identity);
 }
 
-async function settle(env: Env, userId: number, reservationId: string, action: 'commit' | 'release'): Promise<void> {
-  const response = await ledgerStub(env, userId).fetch(`https://ledger/${action}`, {
+async function settle(env: Env, identity: string, reservationId: string, action: 'commit' | 'release'): Promise<void> {
+  const response = await ledgerStub(env, identity).fetch(`https://ledger/${action}`, {
     method: 'POST',
     body: JSON.stringify({ reservationId }),
   });

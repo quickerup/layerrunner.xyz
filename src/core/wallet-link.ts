@@ -44,7 +44,7 @@ export async function reconcileVaultDeposits(env: Env, profile: UserProfile): Pr
     profile.lastDepositLt ?? '0'
   );
 
-  await creditBalance(env, profile.userId, totalNano);
+  await creditBalance(env, profile.identity, totalNano);
   await saveUserProfile(env, { ...profile, lastDepositLt: newestLt });
 
   return totalNano;

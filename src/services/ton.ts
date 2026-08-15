@@ -218,7 +218,7 @@ export function formatLyr(amountNano: bigint): string {
 export function buildDepositLink(
   vaultJettonWallet: string,
   amountNano: bigint,
-  userId: number,
+  memo: string,
 ): string {
-  return `ton://transfer/${vaultJettonWallet}?amount=${amountNano.toString()}&text=${encodeURIComponent(String(userId))}`;
+  return `ton://transfer/${vaultJettonWallet}?amount=${amountNano.toString()}&text=${encodeURIComponent(memo)}`;
 }

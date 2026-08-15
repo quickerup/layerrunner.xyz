@@ -1,4 +1,5 @@
 import { Env } from '../config';
+import { telegramIdentity } from '../core/identity';
 import { approveRequest, getApprovalRequest, rejectRequest } from '../core/approval';
 import { commitReservation, releaseReservation } from '../core/metering';
 import { CLASS_INFO, UserClass, getOnboardingState, getUserProfile } from '../core/profile';
@@ -21,7 +22,7 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
 
   if (action === 'class') {
     const userId = callbackQuery.from.id;
-    const state = await getOnboardingState(env, userId);
+    const state = await getOnboardingState(env, telegramIdentity(userId));
 
     if (!state || state.step !== 'class' || !(param in CLASS_INFO)) {
       await answerCallbackQuery(env, callbackQuery.id, 'This setup step already passed.');
@@ -45,7 +46,7 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   }
 
   const isRequester = callbackQuery.from.id === request.userId;
-  const requesterProfile = isRequester ? undefined : await getUserProfile(env, callbackQuery.from.id);
+  const requesterProfile = isRequester ? undefined : await getUserProfile(env, telegramIdentity(callbackQuery.from.id));
   const isReviewer = requesterProfile?.class === 'reviewer';
 
   if (!isRequester && !isReviewer) {
@@ -53,9 +54,11 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
     return;
   }
 
+  const requesterIdentity = telegramIdentity(request.userId);
+
   if (action === 'reject') {
     await rejectRequest(env, requestId);
-    await releaseReservation(env, request.userId, request.meteringReservationId);
+    await releaseReservation(env, requesterIdentity, request.meteringReservationId);
     await answerCallbackQuery(env, callbackQuery.id, 'Rejected.');
     await sendTelegramMessage(env, request.chatId, `❌ Cancelled approval request \`${request.id}\`.`);
     return;
@@ -74,14 +77,14 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
   await answerCallbackQuery(env, callbackQuery.id, 'Approved. Executing...');
 
   if (request.executableSteps.length === 0) {
-    await releaseReservation(env, request.userId, request.meteringReservationId);
+    await releaseReservation(env, requesterIdentity, request.meteringReservationId);
     await sendTelegramMessage(env, request.chatId, `✅ Approved request \`${request.id}\`, but no executable action was available.`);
     return;
   }
 
-  await commitReservation(env, request.userId, request.meteringReservationId);
+  await commitReservation(env, requesterIdentity, request.meteringReservationId);
 
-  const userGithubToken = await getUserSecret(env, request.userId, GITHUB_TOKEN_SECRET);
+  const userGithubToken = await getUserSecret(env, requesterIdentity, GITHUB_TOKEN_SECRET);
   const executor = new ActionExecutor(env, userGithubToken);
   const lines = [`✅ Approved request \`${request.id}\`.`, '', '*Execution Result*:'];
 

@@ -5,6 +5,7 @@
  */
 
 import { Env } from '../config';
+import { telegramIdentity } from '../core/identity';
 import { FREE_TRIAL_CREDIT_NANO, creditBalance, getBalance } from '../core/metering';
 import {
   CLASS_INFO,
@@ -24,7 +25,7 @@ export function isStartCommand(text: string): boolean {
 }
 
 export async function beginOnboarding(env: Env, chatId: number, userId: number): Promise<void> {
-  await saveOnboardingState(env, userId, { step: 'name' });
+  await saveOnboardingState(env, telegramIdentity(userId), { step: 'name' });
   await sendTelegramMessage(env, chatId, [
     '*Welcome to Layer Runners.*',
     '',
@@ -43,6 +44,8 @@ export async function handleOnboardingMessage(
   text: string,
   state: OnboardingState
 ): Promise<void> {
+  const identity = telegramIdentity(userId);
+
   if (state.step === 'name') {
     const displayName = text.trim().slice(0, 40);
     if (!displayName) {
@@ -50,7 +53,7 @@ export async function handleOnboardingMessage(
       return;
     }
 
-    await saveOnboardingState(env, userId, { step: 'class', displayName });
+    await saveOnboardingState(env, identity, { step: 'class', displayName });
     await sendTelegramMessageWithButtons(
       env,
       chatId,
@@ -100,7 +103,7 @@ export async function handleClassSelection(
   className: UserClass,
   state: OnboardingState
 ): Promise<void> {
-  await saveOnboardingState(env, userId, { step: 'repo', displayName: state.displayName, className });
+  await saveOnboardingState(env, telegramIdentity(userId), { step: 'repo', displayName: state.displayName, className });
   await sendTelegramMessage(env, chatId, [
     `${CLASS_INFO[className].emoji} Got it — *${CLASS_INFO[className].label}*.`,
     '',
@@ -117,8 +120,9 @@ async function finishOnboarding(
   className: UserClass,
   defaultRepo: string | undefined
 ): Promise<void> {
+  const identity = telegramIdentity(userId);
   const profile: UserProfile = {
-    userId,
+    identity,
     displayName,
     class: className,
     defaultRepo,
@@ -126,9 +130,9 @@ async function finishOnboarding(
   };
 
   await saveUserProfile(env, profile);
-  await clearOnboardingState(env, userId);
-  await creditBalance(env, userId, FREE_TRIAL_CREDIT_NANO);
-  const balance = await getBalance(env, userId);
+  await clearOnboardingState(env, identity);
+  await creditBalance(env, identity, FREE_TRIAL_CREDIT_NANO);
+  const balance = await getBalance(env, identity);
   await sendTelegramMessage(env, chatId, formatProfile(profile, true, balance));
 }
 

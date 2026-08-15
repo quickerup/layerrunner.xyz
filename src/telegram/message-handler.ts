@@ -1,4 +1,5 @@
 import { Env } from '../config';
+import { telegramIdentity } from '../core/identity';
 import { createApprovalRequest, formatApprovalMessage } from '../core/approval';
 import { checkAndReserve, commitReservation, formatTopUpPrompt, getBalance, releaseReservation } from '../core/metering';
 import { parseIntent } from '../core/intent-parser';
@@ -42,14 +43,16 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     return;
   }
 
+  const identity = telegramIdentity(from.id);
+
   try {
-    const onboarding = await getOnboardingState(env, from.id);
+    const onboarding = await getOnboardingState(env, identity);
     if (onboarding) {
       await handleOnboardingMessage(env, chat.id, from.id, text, onboarding);
       return;
     }
 
-    const profile = await getUserProfile(env, from.id);
+    const profile = await getUserProfile(env, identity);
 
     if (!profile) {
       if (isStartCommand(text)) {
@@ -60,19 +63,19 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
-    const pendingSecret = await getPendingSecretInput(env, from.id);
+    const pendingSecret = await getPendingSecretInput(env, identity);
     if (pendingSecret) {
-      await handlePendingSecretInput(env, chat.id, from.id, message_id, text, pendingSecret.name);
+      await handlePendingSecretInput(env, chat.id, identity, message_id, text, pendingSecret.name);
       return;
     }
 
-    if (await isAwaitingWalletLink(env, from.id)) {
+    if (await isAwaitingWalletLink(env, identity)) {
       await handlePendingWalletLink(env, chat.id, profile, text);
       return;
     }
 
     if (/^\s*\/profile\b/.test(text)) {
-      const balance = await getBalance(env, from.id);
+      const balance = await getBalance(env, identity);
       const lines = [formatProfile(profile, false, balance)];
       if (profile.walletAddress) {
         try {
@@ -87,7 +90,7 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     }
 
     if (/^\s*\/link_wallet\b/.test(text)) {
-      await setAwaitingWalletLink(env, from.id);
+      await setAwaitingWalletLink(env, identity);
       await sendTelegramMessage(env, chat.id, [
         profile.walletAddress
           ? `🔗 You already have \`${profile.walletAddress}\` linked — paste a new address now to replace it.`
@@ -111,8 +114,8 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     }
 
     if (/^\s*\/connect_github\b/.test(text)) {
-      const alreadyConnected = await hasUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
-      await setPendingSecretInput(env, from.id, { name: GITHUB_TOKEN_SECRET });
+      const alreadyConnected = await hasUserSecret(env, identity, GITHUB_TOKEN_SECRET);
+      await setPendingSecretInput(env, identity, { name: GITHUB_TOKEN_SECRET });
       await sendTelegramMessage(env, chat.id, [
         alreadyConnected
           ? '🔐 You already have a GitHub token connected — send a new one now to replace it.'
@@ -126,8 +129,8 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     }
 
     if (/^\s*\/disconnect_github\b/.test(text)) {
-      const wasConnected = await hasUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
-      await clearUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      const wasConnected = await hasUserSecret(env, identity, GITHUB_TOKEN_SECRET);
+      await clearUserSecret(env, identity, GITHUB_TOKEN_SECRET);
       await sendTelegramMessage(
         env,
         chat.id,
@@ -189,17 +192,17 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
-    let metering = await checkAndReserve(env, from.id, plan);
+    let metering = await checkAndReserve(env, identity, plan);
 
     if (!metering.ok && metering.reason === 'insufficient_balance' && profile.walletAddress) {
       const credited = await reconcileVaultDeposits(env, profile);
       if (credited > BigInt(0)) {
-        metering = await checkAndReserve(env, from.id, plan);
+        metering = await checkAndReserve(env, identity, plan);
       }
     }
 
     if (!metering.ok) {
-      await sendTelegramMessage(env, chat.id, formatTopUpPrompt(env, from.id, metering));
+      await sendTelegramMessage(env, chat.id, formatTopUpPrompt(env, identity, metering));
       return;
     }
 
@@ -225,12 +228,12 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
     }
 
     try {
-      await commitReservation(env, from.id, metering.reservationId);
-      const userGithubToken = await getUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      await commitReservation(env, identity, metering.reservationId);
+      const userGithubToken = await getUserSecret(env, identity, GITHUB_TOKEN_SECRET);
       const response = await executeAndFormat(env, plan, executableSteps, userGithubToken);
       await sendTelegramMessage(env, chat.id, response);
     } catch (error) {
-      await releaseReservation(env, from.id, metering.reservationId);
+      await releaseReservation(env, identity, metering.reservationId);
       throw error;
     }
   } catch (error) {
@@ -246,13 +249,13 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
 async function handlePendingSecretInput(
   env: Env,
   chatId: number,
-  userId: number,
+  identity: string,
   messageId: number,
   text: string,
   secretName: string
 ): Promise<void> {
   if (/^\s*\/cancel\b/.test(text)) {
-    await clearPendingSecretInput(env, userId);
+    await clearPendingSecretInput(env, identity);
     await sendTelegramMessage(env, chatId, 'Cancelled — nothing was saved.');
     return;
   }
@@ -263,15 +266,15 @@ async function handlePendingSecretInput(
     return;
   }
 
-  await setUserSecret(env, userId, secretName, value);
-  await clearPendingSecretInput(env, userId);
+  await setUserSecret(env, identity, secretName, value);
+  await clearPendingSecretInput(env, identity);
   await deleteTelegramMessage(env, chatId, messageId);
   await sendTelegramMessage(env, chatId, '✅ Saved, encrypted, and your message with the token has been deleted from this chat.');
 }
 
 async function handlePendingWalletLink(env: Env, chatId: number, profile: UserProfile, text: string): Promise<void> {
   if (/^\s*\/cancel\b/.test(text)) {
-    await clearAwaitingWalletLink(env, profile.userId);
+    await clearAwaitingWalletLink(env, profile.identity);
     await sendTelegramMessage(env, chatId, 'Cancelled — nothing was saved.');
     return;
   }
@@ -291,7 +294,7 @@ async function handlePendingWalletLink(env: Env, chatId: number, profile: UserPr
   }
 
   await saveUserProfile(env, { ...profile, walletAddress: address, lastDepositLt: undefined });
-  await clearAwaitingWalletLink(env, profile.userId);
+  await clearAwaitingWalletLink(env, profile.identity);
   await sendTelegramMessage(env, chatId, [
     `✅ Linked \`${address}\`.`,
     `Current balance: ${formatLyr(balance)}`,
