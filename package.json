@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/compile-contracts.js",
     "build": "next build",
     "export": "next build",
     "start": "next start",
@@ -13,6 +14,8 @@
     "test:contracts": "jest"
   },
   "dependencies": {
+    "@ton/core": "^0.63.1",
+    "@tonconnect/ui-react": "^2.0.11",
     "@types/node": "^22.13.1",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
@@ -23,7 +26,6 @@
     "typescript": "^5.7.3"
   },
   "devDependencies": {
-    "@ton/core": "^0.63.1",
     "@ton/crypto": "^3.3.0",
     "@ton/sandbox": "^0.44.0",
     "@ton/test-utils": "^0.12.0",

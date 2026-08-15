@@ -38,10 +38,9 @@ export interface TelegramUser {
   username?: string;
 }
 
-export interface TelegramInlineKeyboardButton {
-  text: string;
-  callback_data: string;
-}
+export type TelegramInlineKeyboardButton =
+  | { text: string; callback_data: string; url?: never }
+  | { text: string; url: string; callback_data?: never };
 
 export interface TelegramSendMessageParams {
   chat_id: number;

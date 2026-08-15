@@ -1,5 +1,6 @@
 import Image from "next/image";
 import logo from "../assets/logo.png";
+import { BuyLyrWidget } from "../lib/components/buy-lyr-widget";
 
 const problemItems = [
   "GitHub",
@@ -57,6 +58,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#how-it-works">How it works</a>
           <a href="#integrations">Integrations</a>
+          <a href="#buy-lyr">Buy LYR</a>
           <a href="#security">Security</a>
         </div>
       </nav>
@@ -178,6 +180,18 @@ export default function Home() {
             <span>• Verification queued</span>
           </div>
         </div>
+      </section>
+
+      <section className="section two-column buy-lyr" id="buy-lyr" aria-labelledby="buy-lyr-heading">
+        <div>
+          <p className="eyebrow">LYR token</p>
+          <h2 id="buy-lyr-heading">Get LYR.</h2>
+          <p>
+            LYR is the utility token that pays for actions the bot runs on your behalf.
+            Connect a TON wallet and buy directly — no exchange required.
+          </p>
+        </div>
+        <BuyLyrWidget />
       </section>
 
       <section className="section" id="security" aria-labelledby="security-heading">

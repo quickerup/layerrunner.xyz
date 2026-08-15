@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./styles.css";
+import { TonConnectProvider } from "../lib/components/ton-connect-provider";
 
 export const metadata: Metadata = {
   title: "Layer Runners — AI operating layer for modern software",
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <TonConnectProvider>{children}</TonConnectProvider>
+      </body>
     </html>
   );
 }
