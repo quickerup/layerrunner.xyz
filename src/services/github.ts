@@ -95,7 +95,7 @@ export class GitHubService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`GitHub API error: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`);
+      throw new Error(`GitHub API error: ${response.status} ${response.statusText} on ${path}${text ? ` - ${text}` : ''}`);
     }
 
     if (init.expectJson === false || response.status === 204) {
