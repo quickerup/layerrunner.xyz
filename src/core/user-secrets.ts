@@ -14,6 +14,7 @@
  */
 
 import { Env } from '../config';
+import { ledgerStub as sharedLedgerStub, telegramIdentity } from './identity';
 import { decryptSecret, encryptSecret } from './secrets-crypto';
 
 export type SecretsMap = Record<string, string>;
@@ -93,8 +94,7 @@ async function saveSecrets(env: Env, userId: number, secrets: SecretsMap): Promi
 }
 
 function ledgerStub(env: Env, userId: number): DurableObjectStub {
-  const id = env.LEDGER.idFromName(String(userId));
-  return env.LEDGER.get(id);
+  return sharedLedgerStub(env, telegramIdentity(userId));
 }
 
 function encryptionKey(env: Env): string {

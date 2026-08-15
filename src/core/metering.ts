@@ -1,4 +1,5 @@
 import { Env } from '../config';
+import { ledgerStub as sharedLedgerStub, telegramIdentity } from './identity';
 import { escapeMarkdown } from './markdown';
 import { ExecutionPlan } from './planner';
 import { formatLyr, buildDepositLink } from '../services/ton';
@@ -220,8 +221,7 @@ export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringRe
 }
 
 function ledgerStub(env: Env, userId: number): DurableObjectStub {
-  const id = env.LEDGER.idFromName(String(userId));
-  return env.LEDGER.get(id);
+  return sharedLedgerStub(env, telegramIdentity(userId));
 }
 
 async function settle(env: Env, userId: number, reservationId: string, action: 'commit' | 'release'): Promise<void> {

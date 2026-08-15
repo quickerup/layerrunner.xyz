@@ -6,6 +6,7 @@
  */
 
 import { Env } from '../config';
+import { ledgerStub as sharedLedgerStub, telegramIdentity } from './identity';
 
 export type UserClass = 'deployer' | 'watcher' | 'reviewer';
 
@@ -86,6 +87,5 @@ export async function clearAwaitingWalletLink(env: Env, userId: number): Promise
 }
 
 function ledgerStub(env: Env, userId: number): DurableObjectStub {
-  const id = env.LEDGER.idFromName(String(userId));
-  return env.LEDGER.get(id);
+  return sharedLedgerStub(env, telegramIdentity(userId));
 }
