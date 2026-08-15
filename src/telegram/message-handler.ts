@@ -1,10 +1,10 @@
 import { Env } from '../config';
 import { createApprovalRequest, formatApprovalMessage } from '../core/approval';
-import { checkAndReserve, commitReservation, formatTopUpPrompt, releaseReservation } from '../core/metering';
+import { checkAndReserve, commitReservation, formatTopUpPrompt, getBalance, releaseReservation } from '../core/metering';
 import { parseIntent } from '../core/intent-parser';
 import { ExecutableAction, ExecutionPlan, generatePlan } from '../core/planner';
 import { CLASS_INFO, UserProfile, getOnboardingState, getUserProfile } from '../core/profile';
-import { beginOnboarding, formatCharacterSheet, handleOnboardingMessage, isStartCommand } from './onboarding';
+import { beginOnboarding, formatProfile, handleOnboardingMessage, isStartCommand } from './onboarding';
 import { createIntentProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
 import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
@@ -34,13 +34,14 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       if (isStartCommand(text)) {
         await beginOnboarding(env, chat.id, from.id);
       } else {
-        await sendTelegramMessage(env, chat.id, 'Send /start to set up your character first.');
+        await sendTelegramMessage(env, chat.id, 'Send /start to get set up first.');
       }
       return;
     }
 
     if (/^\s*\/profile\b/.test(text)) {
-      await sendTelegramMessage(env, chat.id, formatCharacterSheet(profile, false));
+      const balance = await getBalance(env, from.id);
+      await sendTelegramMessage(env, chat.id, formatProfile(profile, false, balance));
       return;
     }
 
@@ -169,8 +170,8 @@ function formatPlanResponse(plan: ExecutionPlan): string[] {
 function formatPermissionDenied(profile: UserProfile): string {
   const info = CLASS_INFO[profile.class];
   return [
-    `🔒 Your class (${info.emoji} ${info.label}) is read-only.`,
-    'Ask a Deployer to run this, or check `/profile` to confirm your class.',
+    `🔒 Your role (${info.emoji} ${info.label}) is read-only.`,
+    'Ask a Deployer to run this, or check `/profile` to confirm your role.',
   ].join('\n');
 }
 
@@ -224,16 +225,17 @@ export function formatExecutionResult(action: string, result: ExecutionResult): 
 
 function formatHelpMessage(): string {
   return [
-    '*Layer Runners is online.*',
+    '*Layer Runners* — an AI operator for your stack, right here in Telegram.',
     '',
-    'Try:',
-    '• `show production status` — checks the configured repo, recent CI/deployments, and health URL',
-    '• `why did my last deployment fail?` — summarizes recent failed GitHub Actions/deployments',
-    '• `deploy latest to staging` — asks for approval, then dispatches the configured GitHub workflow',
-    '• `list GitHub repos` — lists accessible repositories for the configured owner',
-    '• `/profile` — see your character sheet (name, class, default repo)',
+    'Just ask, in plain English:',
+    '• `show production status` — repo, CI, deployments, and health, in one shot',
+    '• `why did my last deployment fail?` — digs into recent failures and explains why',
+    '• `deploy latest to staging` — plans it, asks you to approve, then runs it',
+    '• `list GitHub repos` — repos you have access to',
     '',
-    'Required secrets/bindings: `TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUB_OWNER`, and `GITHUB_REPO`.',
+    'Sensitive actions (deploys, creating repos) always ask for your approval first before running.',
+    '',
+    '*About LYR* — every request that actually does something costs a small amount of LYR, priced by how much work it is: a status check is cheap, a diagnosis costs more, a deploy costs the most. Chat and help are always free. Buy LYR anytime at layerrunners.xyz — `/profile` shows your role, default repo, and current balance.',
   ].join('\n');
 }
 

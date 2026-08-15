@@ -1,10 +1,11 @@
 /**
- * Character creation onboarding wizard
- * New users are walked through: display name -> class -> default repo,
+ * First-run setup wizard
+ * New users are walked through: display name -> role -> default repo,
  * before they can use any other command.
  */
 
 import { Env } from '../config';
+import { getBalance } from '../core/metering';
 import {
   CLASS_INFO,
   OnboardingState,
@@ -16,6 +17,7 @@ import {
 } from '../core/profile';
 import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
 import { escapeMarkdown } from '../core/markdown';
+import { formatLyr } from '../services/ton';
 
 export function isStartCommand(text: string): boolean {
   return /^\s*\/start\b/.test(text);
@@ -26,7 +28,9 @@ export async function beginOnboarding(env: Env, chatId: number, userId: number):
   await sendTelegramMessage(env, chatId, [
     '*Welcome to Layer Runners.*',
     '',
-    "Before you start running ops, let's build your character.",
+    "I'm an AI operator for your stack — plain-English requests, planned and run against GitHub (more integrations coming).",
+    '',
+    "Quick setup first, a few questions so I know how to work with you. Everything here runs on LYR, a token you'll buy in a minute at layerrunners.xyz — what a request costs depends on how much work it is.",
     '',
     'What should I call you?',
   ].join('\n'));
@@ -51,9 +55,9 @@ export async function handleOnboardingMessage(
       env,
       chatId,
       [
-        `Nice to meet you, *${escapeMarkdown(displayName)}*.`,
+        `Thanks, *${escapeMarkdown(displayName)}*.`,
         '',
-        'Pick your class:',
+        "What's your role?",
         '',
         ...Object.values(CLASS_INFO).map(info => `${info.emoji} *${info.label}* — ${info.blurb}`),
       ].join('\n'),
@@ -63,7 +67,7 @@ export async function handleOnboardingMessage(
   }
 
   if (state.step === 'class') {
-    await sendTelegramMessage(env, chatId, 'Pick a class using the buttons above to continue.');
+    await sendTelegramMessage(env, chatId, 'Choose a role using the buttons above to continue.');
     return;
   }
 
@@ -98,9 +102,9 @@ export async function handleClassSelection(
 ): Promise<void> {
   await saveOnboardingState(env, userId, { step: 'repo', displayName: state.displayName, className });
   await sendTelegramMessage(env, chatId, [
-    `${CLASS_INFO[className].emoji} Locked in as *${CLASS_INFO[className].label}*.`,
+    `${CLASS_INFO[className].emoji} Got it — *${CLASS_INFO[className].label}*.`,
     '',
-    "Last step — what repo should I default to for you? (\`owner/repo\`, or just \`repo\`)",
+    "Last question: which repo should I default to for you? (`owner/repo`, or just `repo`)",
     '_Send "skip" to use the server default._',
   ].join('\n'));
 }
@@ -123,21 +127,23 @@ async function finishOnboarding(
 
   await saveUserProfile(env, profile);
   await clearOnboardingState(env, userId);
-  await sendTelegramMessage(env, chatId, formatCharacterSheet(profile, true));
+  const balance = await getBalance(env, userId);
+  await sendTelegramMessage(env, chatId, formatProfile(profile, true, balance));
 }
 
-export function formatCharacterSheet(profile: UserProfile, justCreated: boolean): string {
+export function formatProfile(profile: UserProfile, justSetUp: boolean, balanceNano: bigint): string {
   const info = CLASS_INFO[profile.class];
   const lines = [
-    justCreated ? '*Character created.*' : '*Your character*',
+    justSetUp ? "*You're set up.*" : '*Your profile*',
     '',
     `Name: *${escapeMarkdown(profile.displayName)}*`,
-    `Class: ${info.emoji} *${info.label}* — ${info.blurb}`,
+    `Role: ${info.emoji} *${info.label}* — ${info.blurb}`,
     `Default repo: ${profile.defaultRepo ? `\`${profile.defaultRepo}\`` : '_server default_'}`,
+    `Balance: ${formatLyr(balanceNano)}`,
   ];
 
-  if (justCreated) {
-    lines.push('', 'Try `show production status` to get started.');
+  if (justSetUp) {
+    lines.push('', 'Buy LYR anytime at layerrunners.xyz — try `show production status` once you have some.');
   }
 
   return lines.join('\n');

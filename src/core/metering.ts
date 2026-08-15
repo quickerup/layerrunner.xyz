@@ -162,6 +162,13 @@ export async function releaseReservation(env: Env, userId: number, reservationId
   await settle(env, userId, reservationId, 'release');
 }
 
+export async function getBalance(env: Env, userId: number): Promise<bigint> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/balance');
+  if (!response.ok) throw new Error(`Ledger balance failed: ${response.status}`);
+  const body = await response.json() as { balanceNano: string };
+  return BigInt(body.balanceNano);
+}
+
 export function formatTopUpPrompt(env: Env, userId: number, metering: MeteringResult): string {
   if (metering.reason === 'unpriced_action') return '⚠️ This action is not priced yet, so I cannot run it safely.';
   const balance = metering.balanceNano ?? BigInt(0);
