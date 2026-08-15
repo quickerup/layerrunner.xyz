@@ -74,14 +74,26 @@ export async function clearPendingSecretInput(env: Env, identity: string): Promi
   if (!response.ok) throw new Error(`Failed to clear pending secret state: ${response.status}`);
 }
 
+// Read-side failures degrade to "no secrets" rather than throwing: this is
+// called unconditionally on every executed action (to check for a personal
+// GitHub token), so a config/decryption problem here must never take down
+// an otherwise-unrelated message -- worst case is falling back to the
+// shared token, not a broken bot. Write-side failures (saveSecrets) still
+// throw, since a /connect_github that silently doesn't save is worse than
+// one that visibly fails.
 async function loadSecrets(env: Env, identity: string): Promise<SecretsMap> {
-  const response = await ledgerStub(env, identity).fetch('https://ledger/secrets');
-  if (response.status === 404) return {};
-  if (!response.ok) throw new Error(`Failed to load secrets: ${response.status}`);
-  const { blob } = await response.json() as { blob?: string };
-  if (!blob) return {};
-  const json = await decryptSecret(blob, encryptionKey(env));
-  return JSON.parse(json) as SecretsMap;
+  try {
+    const response = await ledgerStub(env, identity).fetch('https://ledger/secrets');
+    if (response.status === 404) return {};
+    if (!response.ok) throw new Error(`Failed to load secrets: ${response.status}`);
+    const { blob } = await response.json() as { blob?: string };
+    if (!blob) return {};
+    const json = await decryptSecret(blob, encryptionKey(env));
+    return JSON.parse(json) as SecretsMap;
+  } catch (error) {
+    console.warn('Failed to load user secrets, falling back to none:', error);
+    return {};
+  }
 }
 
 async function saveSecrets(env: Env, identity: string, secrets: SecretsMap): Promise<void> {

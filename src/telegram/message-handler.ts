@@ -178,7 +178,18 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
 
     for (const executable of executableSteps) {
       if (!executable.params.repo && profile.defaultRepo) {
-        executable.params.repo = profile.defaultRepo;
+        // defaultRepo may be "owner/repo" (as shown in /profile and accepted
+        // during onboarding) or just "repo" -- split it so params.repo never
+        // ends up holding a slash, which would double up with params.owner
+        // (falling back to GITHUB_OWNER) and produce a malformed GitHub API
+        // path like /repos/<owner>/<owner>/<repo>.
+        const [first, second] = profile.defaultRepo.split('/');
+        if (second) {
+          if (!executable.params.owner) executable.params.owner = first;
+          executable.params.repo = second;
+        } else {
+          executable.params.repo = first;
+        }
       }
     }
 
@@ -266,10 +277,20 @@ async function handlePendingSecretInput(
     return;
   }
 
-  await setUserSecret(env, identity, secretName, value);
-  await clearPendingSecretInput(env, identity);
-  await deleteTelegramMessage(env, chatId, messageId);
-  await sendTelegramMessage(env, chatId, '✅ Saved, encrypted, and your message with the token has been deleted from this chat.');
+  // Always clear pending state and scrub the message in `finally` --
+  // whatever the token attempt was, it must not sit in the chat, and the
+  // user must never get stuck re-attempting the same failing save on
+  // every future message if setUserSecret throws (e.g. a config issue).
+  try {
+    await setUserSecret(env, identity, secretName, value);
+    await sendTelegramMessage(env, chatId, '✅ Saved, encrypted, and your message with the token has been deleted from this chat.');
+  } catch (error) {
+    console.error('Failed to save user secret:', error);
+    await sendTelegramMessage(env, chatId, "❌ Couldn't save that securely — nothing was stored. Try `/connect_github` again in a bit.");
+  } finally {
+    await clearPendingSecretInput(env, identity);
+    await deleteTelegramMessage(env, chatId, messageId);
+  }
 }
 
 async function handlePendingWalletLink(env: Env, chatId: number, profile: UserProfile, text: string): Promise<void> {
@@ -293,14 +314,20 @@ async function handlePendingWalletLink(env: Env, chatId: number, profile: UserPr
     return;
   }
 
-  await saveUserProfile(env, { ...profile, walletAddress: address, lastDepositLt: undefined });
-  await clearAwaitingWalletLink(env, profile.identity);
-  await sendTelegramMessage(env, chatId, [
-    `✅ Linked \`${address}\`.`,
-    `Current balance: ${formatLyr(balance)}`,
-    '',
-    'Send LYR from this wallet to the vault anytime and I\'ll credit it to your balance automatically once your free credit runs out.',
-  ].join('\n'));
+  try {
+    await saveUserProfile(env, { ...profile, walletAddress: address, lastDepositLt: undefined });
+    await sendTelegramMessage(env, chatId, [
+      `✅ Linked \`${address}\`.`,
+      `Current balance: ${formatLyr(balance)}`,
+      '',
+      'Send LYR from this wallet to the vault anytime and I\'ll credit it to your balance automatically once your free credit runs out.',
+    ].join('\n'));
+  } catch (error) {
+    console.error('Failed to save linked wallet:', error);
+    await sendTelegramMessage(env, chatId, "❌ Couldn't save that — nothing was linked. Try `/link_wallet` again in a bit.");
+  } finally {
+    await clearAwaitingWalletLink(env, profile.identity);
+  }
 }
 
 async function executeAndFormat(
