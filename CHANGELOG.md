@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.0] - 2026-08-15
+
+### Production Recovery, User Profiles, and the LYR Token Economy
+
+#### Fixed
+
+**Critical production outage**
+- 🐛 A prior merge (`a89d83b`) silently reverted 15 files to an early draft state while claiming to only touch `wrangler.toml` — dropped the `itty-router` dependency (Worker couldn't build), reverted `message-handler.ts`/`planner.ts`/`executor.ts`/`github.ts`/etc. to a disconnected stub with no real GitHub calls or `/start` handling, and downgraded docs/site copy. Restored all clobbered files to the last known-good commit.
+- 🐛 A competing fix landed on `main` independently mid-recovery (`1f3f1e8`) with its own `approval-store.ts` and `Env` type; reconciled the two — kept the more complete existing `core/approval.ts` (already matched `message-handler.ts`'s calling convention, had fee display the other lacked) and removed the duplicate.
+- 🐛 `itty-router` v4→v5 bump broke every request: `worker.ts` still called `router.handle`, which v5 silently repurposes as route registration instead of dispatching — confirmed live via `wrangler tail` (`Callback returned incorrect type; expected 'Promise'`). Fixed to `router.fetch`; removed a stale hand-written `itty-router.d.ts` shim (dated to v4, which shipped no types) that was shadowing v5's real types and hiding the mismatch from `tsc`.
+- 🐛 Telegram's legacy Markdown parse mode rejects an entire message on any single unescaped `_`, `*`, `` ` ``, or `[` — GitHub repo names/descriptions and raw user input were going into Markdown-formatted messages unescaped, causing silent generic-error failures (e.g. `show production status` on any repo with an underscore in its name). Added a shared `escapeMarkdown` helper, applied wherever dynamic text — including TON addresses, which routinely contain `_`/`-` — gets interpolated.
+- 🐛 Missing/misplaced secrets (`TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`) reset on the correct Worker (`layerrunner-prod`, the one actually bound to the live domain route — distinct from an orphaned top-level `layerrunner` Worker some secrets had landed on by mistake).
+
+#### Added
+
+**User profiles & permissions**
+- ✅ First-run setup flow (`/start` for new users): display name → role → default repo, stored per Telegram user ID in the existing `LEDGER` durable object (no new binding needed)
+- ✅ Three roles: **Deployer** (full access), **Watcher** (read-only), **Reviewer** (read-only, plus can approve/reject other users' pending requests)
+- ✅ `/profile` — shows role, default repo, and live LYR balance
+- ✅ Per-user `defaultRepo` now backfills commands that don't name a repo explicitly, on top of the global `GITHUB_REPO` fallback
+- ✅ Every new profile is credited 100 LYR of free trial balance at setup, spent down through the normal metering flow like any paid balance
+
+**LYR token economy**
+- ✅ `contracts/lyr-sale.tolk` — sells LYR from a pre-funded vault at a fixed TON rate (100:1 default, admin-adjustable) or via admin-approved jettons at admin-set rates; 10 sandbox tests covering both purchase paths, pause, admin auth, and rejection of unapproved/disabled jettons
+- ✅ Deployed and verified live: admin address, LYR master, rate, and derived vault wallet all confirmed against on-chain state (not assumed)
+- ✅ TON Connect wallet integration on layerrunners.xyz: public "Buy LYR" widget, and a temporary `/admin-deploy` page + bot `/deploy` command (gated to Deployer role) that sends the contract's real deploy transaction — no deployer private key ever touches this codebase
+- ✅ `/start` and `/help` now explain LYR pricing properly: free for chat/help, scales with the work a request does, where to buy more
+
+#### Changed
+- Onboarding and profile copy reworked from RPG "character creation" framing to a plainer setup-questionnaire tone (same underlying flow, different words)
+
 ## [0.1.0] - 2026-08-14
 
 ### Initial Product Foundation - Telegram Bot Infrastructure
@@ -174,7 +205,7 @@ npm run deploy:pages   # Update Pages
 ## Notes
 
 - **Telegram Bot Status**: Live and receiving webhooks at `/telegram/webhook`
-- **Storage**: Currently using in-memory (approval store) - migrate to persistent DB in Phase 2
+- **Storage**: `APPROVALS` and `LEDGER` durable objects (SQLite-backed) — no longer in-memory as of 0.2.0
 - **Rate Limiting**: Not yet implemented - add in Phase 2
 - **Monitoring**: Basic health check at `/health` endpoint
 - **Logging**: Browser console and Cloudflare logs available via `wrangler tail`
