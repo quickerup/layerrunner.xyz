@@ -5,7 +5,7 @@
  */
 
 import { Env } from '../config';
-import { getBalance } from '../core/metering';
+import { FREE_TRIAL_CREDIT_NANO, creditBalance, getBalance } from '../core/metering';
 import {
   CLASS_INFO,
   OnboardingState,
@@ -30,7 +30,7 @@ export async function beginOnboarding(env: Env, chatId: number, userId: number):
     '',
     "I'm an AI operator for your stack — plain-English requests, planned and run against GitHub (more integrations coming).",
     '',
-    "Quick setup first, a few questions so I know how to work with you. Everything here runs on LYR, a token you'll buy in a minute at layerrunners.xyz — what a request costs depends on how much work it is.",
+    `Quick setup first, a few questions so I know how to work with you. Everything here runs on LYR — you'll start with ${formatLyr(FREE_TRIAL_CREDIT_NANO)} free to try it out, then top up anytime at layerrunners.xyz.`,
     '',
     'What should I call you?',
   ].join('\n'));
@@ -127,6 +127,7 @@ async function finishOnboarding(
 
   await saveUserProfile(env, profile);
   await clearOnboardingState(env, userId);
+  await creditBalance(env, userId, FREE_TRIAL_CREDIT_NANO);
   const balance = await getBalance(env, userId);
   await sendTelegramMessage(env, chatId, formatProfile(profile, true, balance));
 }
@@ -143,7 +144,7 @@ export function formatProfile(profile: UserProfile, justSetUp: boolean, balanceN
   ];
 
   if (justSetUp) {
-    lines.push('', 'Buy LYR anytime at layerrunners.xyz — try `show production status` once you have some.');
+    lines.push('', `You've got ${formatLyr(FREE_TRIAL_CREDIT_NANO)} free to try things out — try \`show production status\` to get started. Buy more anytime at layerrunners.xyz.`);
   }
 
   return lines.join('\n');

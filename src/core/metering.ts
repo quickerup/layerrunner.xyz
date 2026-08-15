@@ -5,6 +5,13 @@ import { formatLyr, buildDepositLink } from '../services/ton';
 
 const NANO_FACTOR = BigInt(1_000_000_000);
 
+// Every new profile is credited this once, at setup — a free trial
+// allowance so people can try the bot before buying LYR. Spends down
+// through the normal reserve/commit flow like any other balance, so it
+// needs no separate accounting: a github_deploy just costs more of it
+// than a project_status does, same as paid balance.
+export const FREE_TRIAL_CREDIT_NANO = BigInt(100) * NANO_FACTOR; // 100 LYR
+
 export const FEE_TABLE: Record<string, number> = {
   help: 0,
   clarify: 0,
@@ -160,6 +167,14 @@ export async function commitReservation(env: Env, userId: number, reservationId?
 export async function releaseReservation(env: Env, userId: number, reservationId?: string): Promise<void> {
   if (!reservationId) return;
   await settle(env, userId, reservationId, 'release');
+}
+
+export async function creditBalance(env: Env, userId: number, amountNano: bigint): Promise<void> {
+  const response = await ledgerStub(env, userId).fetch('https://ledger/credit', {
+    method: 'POST',
+    body: JSON.stringify({ amountNano: amountNano.toString() }),
+  });
+  if (!response.ok) throw new Error(`Ledger credit failed: ${response.status}`);
 }
 
 export async function getBalance(env: Env, userId: number): Promise<bigint> {
