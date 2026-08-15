@@ -20,6 +20,10 @@ export function telegramIdentity(userId: number): string {
   return String(userId);
 }
 
+export function githubIdentity(userId: number): string {
+  return `gh:${userId}`;
+}
+
 export function ledgerStub(env: Env, identity: string): DurableObjectStub {
   const id = env.LEDGER.idFromName(identity);
   return env.LEDGER.get(id);

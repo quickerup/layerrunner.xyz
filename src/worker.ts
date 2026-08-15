@@ -2,7 +2,13 @@ import { Env } from './config';
 import { ApprovalStore } from './core/approval';
 import { UserLedger } from './core/metering';
 import { handleTelegramWebhook } from './telegram/webhook';
-import { handleGetSession, handleLogout, handleTelegramAuthCallback } from './auth/routes';
+import {
+  handleGetSession,
+  handleGitHubAuthCallback,
+  handleGitHubAuthStart,
+  handleLogout,
+  handleTelegramAuthCallback,
+} from './auth/routes';
 import { handleApiApprove, handleApiChat } from './api/routes';
 import { Router } from 'itty-router';
 
@@ -13,6 +19,8 @@ router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramW
 
 // Web login (Telegram Login Widget -- same identity/DO as the bot)
 router.post('/auth/telegram/callback', (request: Request, env: Env) => handleTelegramAuthCallback(request, env));
+router.get('/auth/github', (request: Request, env: Env) => handleGitHubAuthStart(request, env));
+router.get('/auth/github/callback', (request: Request, env: Env) => handleGitHubAuthCallback(request, env));
 router.post('/auth/logout', () => handleLogout());
 router.get('/api/session', (request: Request, env: Env) => handleGetSession(request, env));
 

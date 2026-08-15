@@ -366,6 +366,19 @@ p {
 .buy-lyr-status.success { color: var(--accent); }
 .buy-lyr-status.error { color: #f87171; }
 
+.login-options {
+  align-items: flex-start;
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.login-divider {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
 @media (max-width: 900px) {
   .site-nav,
   .nav-links,

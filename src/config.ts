@@ -33,6 +33,10 @@ export interface Env {
   // independently (rotating it just logs everyone out, vs. rotating the
   // secrets key which would strand every stored GitHub token).
   SESSION_SIGNING_KEY?: string;
+  // OAuth App credentials used only for web identity login. This is
+  // intentionally separate from /connect_github's repo-access token flow.
+  GITHUB_OAUTH_CLIENT_ID?: string;
+  GITHUB_OAUTH_CLIENT_SECRET?: string;
 }
 
 export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {

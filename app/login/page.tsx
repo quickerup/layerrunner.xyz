@@ -69,10 +69,11 @@ export default function LoginPage() {
     <main className="site-shell">
       <section className="section">
         <p className="eyebrow">Web login</p>
-        <h2>Sign in with Telegram</h2>
+        <h2>Sign in to Layer Runners</h2>
         <p>
-          This resolves to the exact same account as the Telegram bot — if you&apos;ve already used{" "}
-          @{BOT_USERNAME}, your balance, profile, and linked wallet carry over immediately, no separate signup.
+          Telegram resolves to the exact same account as the bot — if you&apos;ve already used @{BOT_USERNAME}, your
+          balance, profile, and linked wallet carry over immediately. GitHub creates a separate web identity with
+          read-only profile access only; repo access still requires the in-chat connect flow.
         </p>
 
         {state.kind === "signed-in" ? (
@@ -83,7 +84,13 @@ export default function LoginPage() {
             </button>
           </div>
         ) : (
-          <div id="telegram-login-widget" />
+          <div className="login-options">
+            <a className="button primary" href="/auth/github">
+              Continue with GitHub
+            </a>
+            <div className="login-divider">or use your existing bot account</div>
+            <div id="telegram-login-widget" />
+          </div>
         )}
 
         {state.kind === "error" && <p className="buy-lyr-status error">{state.message}</p>}
