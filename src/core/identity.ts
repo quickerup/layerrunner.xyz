@@ -24,6 +24,10 @@ export function githubIdentity(userId: number): string {
   return `gh:${userId}`;
 }
 
+export function googleIdentity(subject: string): string {
+  return `google:${subject}`;
+}
+
 export function ledgerStub(env: Env, identity: string): DurableObjectStub {
   const id = env.LEDGER.idFromName(identity);
   return env.LEDGER.get(id);

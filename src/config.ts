@@ -37,6 +37,8 @@ export interface Env {
   // intentionally separate from /connect_github's repo-access token flow.
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
 }
 
 export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {

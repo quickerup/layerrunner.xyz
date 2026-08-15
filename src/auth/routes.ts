@@ -6,7 +6,7 @@
  */
 
 import { Env } from '../config';
-import { githubIdentity, telegramIdentity } from '../core/identity';
+import { githubIdentity, googleIdentity, telegramIdentity } from '../core/identity';
 import { ensureProfile } from '../core/chat-engine';
 import { getBalance } from '../core/metering';
 import { formatLyr } from '../services/ton';
@@ -23,6 +23,10 @@ const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const GITHUB_USER_URL = 'https://api.github.com/user';
 const GITHUB_OAUTH_STATE_COOKIE = 'lr_github_oauth_state';
+const GOOGLE_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const GOOGLE_OAUTH_STATE_COOKIE = 'lr_google_oauth_state';
 
 interface GitHubTokenResponse {
   access_token?: string;
@@ -33,6 +37,17 @@ interface GitHubTokenResponse {
 interface GitHubUserResponse {
   id?: number;
   login?: string;
+}
+
+interface GoogleTokenResponse {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+}
+
+interface GoogleUserInfoResponse {
+  sub?: string;
+  email?: string;
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -66,12 +81,12 @@ export async function handleTelegramAuthCallback(request: Request, env: Env): Pr
   return json({ ok: true }, { status: 200, headers: { 'Set-Cookie': sessionCookieHeader(token) } });
 }
 
-function oauthStateCookieHeader(state: string): string {
-  return `${GITHUB_OAUTH_STATE_COOKIE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`;
+function oauthStateCookieHeader(name: string, state: string): string {
+  return `${name}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`;
 }
 
-function clearOAuthStateCookieHeader(): string {
-  return `${GITHUB_OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+function clearOAuthStateCookieHeader(name: string): string {
+  return `${name}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
 }
 
 function readCookie(request: Request, name: string): string | undefined {
@@ -94,6 +109,10 @@ function githubOAuthRedirectUri(request: Request): string {
   return `${new URL(request.url).origin}/auth/github/callback`;
 }
 
+function googleOAuthRedirectUri(request: Request): string {
+  return `${new URL(request.url).origin}/auth/google/callback`;
+}
+
 export async function handleGitHubAuthStart(request: Request, env: Env): Promise<Response> {
   if (!env.GITHUB_OAUTH_CLIENT_ID || !env.GITHUB_OAUTH_CLIENT_SECRET || !env.SESSION_SIGNING_KEY) {
     return json({ ok: false, error: 'GitHub login is not configured yet.' }, { status: 503 });
@@ -110,7 +129,7 @@ export async function handleGitHubAuthStart(request: Request, env: Env): Promise
     status: 302,
     headers: {
       Location: authorizeUrl.toString(),
-      'Set-Cookie': oauthStateCookieHeader(state),
+      'Set-Cookie': oauthStateCookieHeader(GITHUB_OAUTH_STATE_COOKIE, state),
     },
   });
 }
@@ -127,7 +146,7 @@ export async function handleGitHubAuthCallback(request: Request, env: Env): Prom
   if (!code || !state || !storedState || state !== storedState) {
     return json(
       { ok: false, error: 'Invalid GitHub OAuth callback.' },
-      { status: 400, headers: { 'Set-Cookie': clearOAuthStateCookieHeader() } }
+      { status: 400, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GITHUB_OAUTH_STATE_COOKIE) } }
     );
   }
 
@@ -149,7 +168,7 @@ export async function handleGitHubAuthCallback(request: Request, env: Env): Prom
   if (!tokenResponse.ok || !tokenBody.access_token) {
     return json(
       { ok: false, error: tokenBody.error_description ?? tokenBody.error ?? 'Could not complete GitHub login.' },
-      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader() } }
+      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GITHUB_OAUTH_STATE_COOKIE) } }
     );
   }
 
@@ -165,18 +184,93 @@ export async function handleGitHubAuthCallback(request: Request, env: Env): Prom
   if (!userResponse.ok || typeof userBody.id !== 'number') {
     return json(
       { ok: false, error: 'Could not fetch GitHub user.' },
-      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader() } }
+      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GITHUB_OAUTH_STATE_COOKIE) } }
     );
   }
 
   const token = await mintSession(env, githubIdentity(userBody.id), 'github');
   const headers = new Headers({ Location: '/chat' });
   headers.append('Set-Cookie', sessionCookieHeader(token));
-  headers.append('Set-Cookie', clearOAuthStateCookieHeader());
+  headers.append('Set-Cookie', clearOAuthStateCookieHeader(GITHUB_OAUTH_STATE_COOKIE));
   return new Response(null, {
     status: 302,
     headers,
   });
+}
+
+export async function handleGoogleAuthStart(request: Request, env: Env): Promise<Response> {
+  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.SESSION_SIGNING_KEY) {
+    return json({ ok: false, error: 'Google login is not configured yet.' }, { status: 503 });
+  }
+
+  const state = randomOAuthState();
+  const authorizeUrl = new URL(GOOGLE_AUTHORIZE_URL);
+  authorizeUrl.searchParams.set('client_id', env.GOOGLE_OAUTH_CLIENT_ID);
+  authorizeUrl.searchParams.set('redirect_uri', googleOAuthRedirectUri(request));
+  authorizeUrl.searchParams.set('response_type', 'code');
+  authorizeUrl.searchParams.set('scope', 'openid email profile');
+  authorizeUrl.searchParams.set('state', state);
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: authorizeUrl.toString(),
+      'Set-Cookie': oauthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE, state),
+    },
+  });
+}
+
+export async function handleGoogleAuthCallback(request: Request, env: Env): Promise<Response> {
+  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.SESSION_SIGNING_KEY) {
+    return json({ ok: false, error: 'Google login is not configured yet.' }, { status: 503 });
+  }
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  const storedState = readCookie(request, GOOGLE_OAUTH_STATE_COOKIE);
+  if (!code || !state || !storedState || state !== storedState) {
+    return json(
+      { ok: false, error: 'Invalid Google OAuth callback.' },
+      { status: 400, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE) } }
+    );
+  }
+
+  const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+      client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: googleOAuthRedirectUri(request),
+    }),
+  });
+  const tokenBody = (await tokenResponse.json().catch(() => ({}))) as GoogleTokenResponse;
+  if (!tokenResponse.ok || !tokenBody.access_token) {
+    return json(
+      { ok: false, error: tokenBody.error_description ?? tokenBody.error ?? 'Could not complete Google login.' },
+      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE) } }
+    );
+  }
+
+  const userResponse = await fetch(GOOGLE_USERINFO_URL, {
+    headers: { Authorization: `Bearer ${tokenBody.access_token}` },
+  });
+  const userBody = (await userResponse.json().catch(() => ({}))) as GoogleUserInfoResponse;
+  if (!userResponse.ok || !userBody.sub) {
+    return json(
+      { ok: false, error: 'Could not fetch Google user.' },
+      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE) } }
+    );
+  }
+
+  const token = await mintSession(env, googleIdentity(userBody.sub), 'google');
+  const headers = new Headers({ Location: '/chat' });
+  headers.append('Set-Cookie', sessionCookieHeader(token));
+  headers.append('Set-Cookie', clearOAuthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE));
+  return new Response(null, { status: 302, headers });
 }
 
 export async function handleGetSession(request: Request, env: Env): Promise<Response> {

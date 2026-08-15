@@ -6,6 +6,8 @@ import {
   handleGetSession,
   handleGitHubAuthCallback,
   handleGitHubAuthStart,
+  handleGoogleAuthCallback,
+  handleGoogleAuthStart,
   handleLogout,
   handleTelegramAuthCallback,
 } from './auth/routes';
@@ -21,6 +23,8 @@ router.post('/telegram/webhook', (request: Request, env: Env) => handleTelegramW
 router.post('/auth/telegram/callback', (request: Request, env: Env) => handleTelegramAuthCallback(request, env));
 router.get('/auth/github', (request: Request, env: Env) => handleGitHubAuthStart(request, env));
 router.get('/auth/github/callback', (request: Request, env: Env) => handleGitHubAuthCallback(request, env));
+router.get('/auth/google', (request: Request, env: Env) => handleGoogleAuthStart(request, env));
+router.get('/auth/google/callback', (request: Request, env: Env) => handleGoogleAuthCallback(request, env));
 router.post('/auth/logout', () => handleLogout());
 router.get('/api/session', (request: Request, env: Env) => handleGetSession(request, env));
 
