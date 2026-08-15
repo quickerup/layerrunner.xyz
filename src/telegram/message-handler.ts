@@ -44,6 +44,22 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    // Temporary: deploys the LYR sale contract via a connect-wallet-and-sign
+    // page, so no deployer mnemonic ever touches this bot. Remove this
+    // command (and unlink/remove /admin-deploy on the site) once the real
+    // deploy is done — there's no reason to leave a "deploy a fresh sale
+    // contract" button live indefinitely.
+    if (/^\s*\/deploy\b/.test(text)) {
+      if (profile.class !== 'deployer') {
+        await sendTelegramMessage(env, chat.id, formatPermissionDenied(profile));
+        return;
+      }
+      await sendTelegramMessageWithButtons(env, chat.id, '🛠️ Connect your wallet and sign the deploy transaction:', [
+        [{ text: 'Deploy LYR sale contract', url: 'https://layerrunners.xyz/admin-deploy' }],
+      ]);
+      return;
+    }
+
     const intent = await parseIntent(text, createIntentProvider(env));
     const plan = generatePlan(intent);
     const executableSteps = plan.steps.flatMap(step => step.executable ? [step.executable] : []);
