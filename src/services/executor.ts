@@ -14,7 +14,7 @@ export interface ExecutionResult {
 }
 
 export class ActionExecutor {
-  constructor(private readonly env: Env) {}
+  constructor(private readonly env: Env, private readonly userGithubToken?: string) {}
   async executeAction(
     action: string,
     params: Record<string, any>
@@ -188,9 +188,10 @@ export class ActionExecutor {
   }
 
   private initGitHubService(): GitHubService {
-    if (!this.env.GITHUB_TOKEN) {
-      throw new Error('GITHUB_TOKEN environment binding is required');
+    const token = this.userGithubToken || this.env.GITHUB_TOKEN;
+    if (!token) {
+      throw new Error('No GitHub token available — connect one with /connect_github, or set GITHUB_TOKEN.');
     }
-    return new GitHubService(this.env.GITHUB_TOKEN);
+    return new GitHubService(token);
   }
 }

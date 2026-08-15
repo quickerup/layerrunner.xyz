@@ -52,6 +52,18 @@ export class UserLedger {
       await this.state.storage.delete('onboarding');
       return json({ ok: true });
     }
+    if (url.pathname === '/secrets' && request.method === 'GET') return this.getStored('secrets');
+    if (url.pathname === '/secrets' && request.method === 'POST') return this.setStored('secrets', request);
+    if (url.pathname === '/secrets' && request.method === 'DELETE') {
+      await this.state.storage.delete('secrets');
+      return json({ ok: true });
+    }
+    if (url.pathname === '/pending-secret' && request.method === 'GET') return this.getStored('pendingSecret');
+    if (url.pathname === '/pending-secret' && request.method === 'POST') return this.setStored('pendingSecret', request);
+    if (url.pathname === '/pending-secret' && request.method === 'DELETE') {
+      await this.state.storage.delete('pendingSecret');
+      return json({ ok: true });
+    }
 
     return new Response('not found', { status: 404 });
   }

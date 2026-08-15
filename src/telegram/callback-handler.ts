@@ -7,6 +7,7 @@ import { ActionExecutor } from '../services/executor';
 import { answerCallbackQuery, sendTelegramMessage } from './api';
 import { formatExecutionResult } from './message-handler';
 import { TelegramCallbackQuery } from './types';
+import { GITHUB_TOKEN_SECRET, getUserSecret } from '../core/user-secrets';
 
 export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuery): Promise<void> {
   const data = callbackQuery.data;
@@ -80,7 +81,8 @@ export async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallb
 
   await commitReservation(env, request.userId, request.meteringReservationId);
 
-  const executor = new ActionExecutor(env);
+  const userGithubToken = await getUserSecret(env, request.userId, GITHUB_TOKEN_SECRET);
+  const executor = new ActionExecutor(env, userGithubToken);
   const lines = [`✅ Approved request \`${request.id}\`.`, '', '*Execution Result*:'];
 
   for (const executable of request.executableSteps) {

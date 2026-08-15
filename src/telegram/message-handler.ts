@@ -7,15 +7,25 @@ import { CLASS_INFO, UserProfile, getOnboardingState, getUserProfile } from '../
 import { beginOnboarding, formatProfile, handleOnboardingMessage, isStartCommand } from './onboarding';
 import { createIntentProvider } from '../services/ai-provider';
 import { ActionExecutor, ExecutionResult } from '../services/executor';
-import { sendTelegramMessage, sendTelegramMessageWithButtons } from './api';
+import { sendTelegramMessage, sendTelegramMessageWithButtons, deleteTelegramMessage } from './api';
 import { escapeMarkdown } from '../core/markdown';
 import { TelegramMessage } from './types';
+import {
+  GITHUB_TOKEN_SECRET,
+  clearPendingSecretInput,
+  clearUserSecret,
+  getPendingSecretInput,
+  getUserSecret,
+  hasUserSecret,
+  setPendingSecretInput,
+  setUserSecret,
+} from '../core/user-secrets';
 
 const md = (value: unknown, fallback = 'unknown'): string =>
   value === undefined || value === null || value === '' ? fallback : escapeMarkdown(String(value));
 
 export async function handleMessage(env: Env, message: TelegramMessage): Promise<void> {
-  const { text, chat, from } = message;
+  const { text, chat, from, message_id } = message;
 
   if (!text) {
     return;
@@ -39,9 +49,43 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    const pendingSecret = await getPendingSecretInput(env, from.id);
+    if (pendingSecret) {
+      await handlePendingSecretInput(env, chat.id, from.id, message_id, text, pendingSecret.name);
+      return;
+    }
+
     if (/^\s*\/profile\b/.test(text)) {
       const balance = await getBalance(env, from.id);
       await sendTelegramMessage(env, chat.id, formatProfile(profile, false, balance));
+      return;
+    }
+
+    if (/^\s*\/connect_github\b/.test(text)) {
+      const alreadyConnected = await hasUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      await setPendingSecretInput(env, from.id, { name: GITHUB_TOKEN_SECRET });
+      await sendTelegramMessage(env, chat.id, [
+        alreadyConnected
+          ? '🔐 You already have a GitHub token connected — send a new one now to replace it.'
+          : '🔐 Send your GitHub personal access token now, as your next message.',
+        '',
+        "It'll be encrypted and stored on Cloudflare so I can act on your GitHub account instead of the default one — I'll delete your message with the token right after, so it doesn't sit in this chat. Remove it anytime with `/disconnect_github`.",
+        '',
+        'Send `/cancel` to back out without connecting anything.',
+      ].join('\n'));
+      return;
+    }
+
+    if (/^\s*\/disconnect_github\b/.test(text)) {
+      const wasConnected = await hasUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      await clearUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      await sendTelegramMessage(
+        env,
+        chat.id,
+        wasConnected
+          ? "🔓 Disconnected. I'll use the default configured GitHub account for you from now on."
+          : "You don't have a personal GitHub token connected."
+      );
       return;
     }
 
@@ -111,7 +155,8 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
 
     try {
       await commitReservation(env, from.id, metering.reservationId);
-      const response = await executeAndFormat(env, plan, executableSteps);
+      const userGithubToken = await getUserSecret(env, from.id, GITHUB_TOKEN_SECRET);
+      const response = await executeAndFormat(env, plan, executableSteps, userGithubToken);
       await sendTelegramMessage(env, chat.id, response);
     } catch (error) {
       await releaseReservation(env, from.id, metering.reservationId);
@@ -127,7 +172,38 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
   }
 }
 
-async function executeAndFormat(env: Env, plan: ExecutionPlan, executableSteps: ExecutableAction[]): Promise<string> {
+async function handlePendingSecretInput(
+  env: Env,
+  chatId: number,
+  userId: number,
+  messageId: number,
+  text: string,
+  secretName: string
+): Promise<void> {
+  if (/^\s*\/cancel\b/.test(text)) {
+    await clearPendingSecretInput(env, userId);
+    await sendTelegramMessage(env, chatId, 'Cancelled — nothing was saved.');
+    return;
+  }
+
+  const value = text.trim();
+  if (!value) {
+    await sendTelegramMessage(env, chatId, "That doesn't look right — send the token as plain text, or `/cancel`.");
+    return;
+  }
+
+  await setUserSecret(env, userId, secretName, value);
+  await clearPendingSecretInput(env, userId);
+  await deleteTelegramMessage(env, chatId, messageId);
+  await sendTelegramMessage(env, chatId, '✅ Saved, encrypted, and your message with the token has been deleted from this chat.');
+}
+
+async function executeAndFormat(
+  env: Env,
+  plan: ExecutionPlan,
+  executableSteps: ExecutableAction[],
+  userGithubToken?: string
+): Promise<string> {
   const lines = formatPlanResponse(plan);
 
   if (executableSteps.length === 0) {
@@ -141,7 +217,7 @@ async function executeAndFormat(env: Env, plan: ExecutionPlan, executableSteps: 
     return lines.join('\n');
   }
 
-  const executor = new ActionExecutor(env);
+  const executor = new ActionExecutor(env, userGithubToken);
   lines.push('\n*Execution Result*:');
 
   for (const executable of executableSteps) {
@@ -234,6 +310,8 @@ function formatHelpMessage(): string {
     '• `list GitHub repos` — repos you have access to',
     '',
     'Sensitive actions (deploys, creating repos) always ask for your approval first before running.',
+    '',
+    'By default everything runs against a shared GitHub account. Want it to act on your own instead? `/connect_github` walks you through it — your token is encrypted at rest and your message gets deleted right after (`/disconnect_github` to remove it anytime).',
     '',
     '*About LYR* — every request that actually does something costs a small amount of LYR, priced by how much work it is: a status check is cheap, a diagnosis costs more, a deploy costs the most. Chat and help are always free. Buy LYR anytime at layerrunners.xyz — `/profile` shows your role, default repo, and current balance.',
   ].join('\n');

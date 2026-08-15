@@ -22,6 +22,11 @@ export interface Env {
   APP_HEALTH_URL?: string;
   ENVIRONMENT?: string;
   TONCENTER_API_KEY?: string;
+  // Master key for encrypting user-supplied secrets (e.g. a personal
+  // GitHub token) at rest in their LEDGER durable object -- see
+  // core/secrets-crypto.ts and core/user-secrets.ts. Set once by whoever
+  // deploys the bot; end users never touch this or any wrangler command.
+  SECRETS_ENCRYPTION_KEY: string;
 }
 
 export function getEnv(env: Env, key: keyof Env, defaultValue?: string): string {

@@ -44,6 +44,23 @@ export async function answerCallbackQuery(
   });
 }
 
+/**
+ * Best-effort delete — used to scrub a message containing a plaintext
+ * secret right after it's stored. Telegram only allows bots to delete
+ * incoming messages in private chats within 48h; if that's not met (or
+ * anything else goes wrong), this returns false rather than throwing —
+ * a failed scrub shouldn't block the secret having already been saved.
+ */
+export async function deleteTelegramMessage(env: Env, chatId: number, messageId: number): Promise<boolean> {
+  try {
+    await callTelegramApi(env, 'deleteMessage', { chat_id: chatId, message_id: messageId });
+    return true;
+  } catch (error) {
+    console.warn('Failed to delete Telegram message:', error);
+    return false;
+  }
+}
+
 async function callTelegramApi(env: Env, method: string, params: Record<string, unknown>): Promise<void> {
   const botToken = env.TELEGRAM_BOT_TOKEN;
 

@@ -73,7 +73,7 @@ export default function Home() {
           </p>
           <div className="cta-row" aria-label="Primary actions">
             <a className="button primary" href="#telegram">Open Layer Runners on Telegram</a>
-            <a className="button secondary" href="#how-it-works">See how it works</a>
+            <a className="button secondary" href="#buy-lyr">Buy LYR</a>
           </div>
         </div>
         <div className="hero-card" aria-label="Example production deployment plan">
