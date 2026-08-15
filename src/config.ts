@@ -22,6 +22,10 @@ export interface Env {
   APP_HEALTH_URL?: string;
   ENVIRONMENT?: string;
   TONCENTER_API_KEY?: string;
+  // Primary planner backend (services/ai-provider.ts) -- when set, plan
+  // extraction tries Gemini first and falls back to the Workers AI binding
+  // (still configured below) on any failure, then to the regex pipeline.
+  GEMINI_API_KEY?: string;
   // Master key for encrypting user-supplied secrets (e.g. a personal
   // GitHub token) at rest in their LEDGER durable object -- see
   // core/secrets-crypto.ts and core/user-secrets.ts. Set once by whoever

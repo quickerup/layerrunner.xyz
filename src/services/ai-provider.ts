@@ -21,6 +21,8 @@ const PLANNER_ACTIONS: PlannerAction[] = [
   'project_status',
 ];
 
+const VALID_ACTIONS: string[] = [...PLANNER_ACTIONS, 'help', 'clarify'];
+
 export interface AIPlanExtraction {
   action: PlannerAction | 'help' | 'clarify';
   params: {
@@ -52,6 +54,114 @@ const ACTION_GUIDE = [
   'clarify - the request is ambiguous, missing required info (e.g. no repo name when one is required), or not something any of the above actions can do. params: {}, and set clarifyMessage to a short question or explanation for the user.',
 ].join('\n');
 
+// Shared between every backend -- keeps the two providers' behavior from
+// drifting on what each action means or expects as params.
+function buildExtractionPrompt(input: string): string {
+  return [
+    'You are the planner for Layer Runners, a bot that operates a GitHub-backed project on behalf of the user.',
+    'Read the request and decide which single action it maps to, and extract any parameters that action needs.',
+    'Available actions:',
+    ACTION_GUIDE,
+    'Return strict JSON only, with keys: action, params, confidence, clarifyMessage.',
+    'action must be exactly one of: ' + VALID_ACTIONS.join(', ') + '.',
+    'params is an object containing only the fields relevant to the chosen action (omit fields you cannot determine from the request).',
+    'confidence is a number from 0 to 1 reflecting how sure you are action+params are correct.',
+    'clarifyMessage is required (a short string) only when action is "clarify"; omit it otherwise.',
+    `Request: ${JSON.stringify(input)}`,
+  ].join('\n');
+}
+
+// Validates/normalizes a provider's already-parsed JSON response into the
+// shape planner.ts expects. Shared so no backend can silently hand back
+// something the planner wasn't built to trust.
+function validateExtraction(parsed: unknown): AIPlanExtraction {
+  const obj = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<AIPlanExtraction>;
+
+  if (!VALID_ACTIONS.includes(obj.action ?? '')) {
+    throw new Error('AI returned an unknown action');
+  }
+
+  const confidence = Number(obj.confidence);
+  if (!Number.isFinite(confidence)) {
+    throw new Error('AI returned invalid confidence');
+  }
+
+  const params = obj.params && typeof obj.params === 'object' ? obj.params : {};
+
+  return {
+    action: obj.action as AIPlanExtraction['action'],
+    params,
+    confidence: Math.max(0, Math.min(1, confidence)),
+    clarifyMessage: typeof obj.clarifyMessage === 'string' ? obj.clarifyMessage : undefined,
+  };
+}
+
+// Primary planner backend. Google's Generative Language API, called via
+// plain fetch (no SDK -- keeps the Worker bundle small). Uses response_schema
+// so the model is constrained to valid JSON server-side, rather than relying
+// on prompt discipline + a best-effort regex extraction like the Workers AI
+// path below.
+class GeminiProvider implements AIProvider {
+  // Pinned to a specific stable release per Google's own guidance -- "-latest"
+  // aliases hot-swap the underlying model with only two weeks' notice, which
+  // is exactly the kind of surprise a live production planner shouldn't eat.
+  // Flash-Lite is Google's fastest/cheapest tier, a good match for a
+  // single-shot structured-extraction call like this one.
+  private readonly model = 'gemini-3.5-flash-lite';
+
+  constructor(private readonly apiKey: string) {}
+
+  async extractPlan(input: string): Promise<AIPlanExtraction> {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: buildExtractionPrompt(input) }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              action: { type: 'STRING', enum: VALID_ACTIONS },
+              params: {
+                type: 'OBJECT',
+                properties: {
+                  repo: { type: 'STRING' },
+                  owner: { type: 'STRING' },
+                  environment: { type: 'STRING' },
+                  ref: { type: 'STRING' },
+                  name: { type: 'STRING' },
+                  private: { type: 'BOOLEAN' },
+                },
+              },
+              confidence: { type: 'NUMBER' },
+              clarifyMessage: { type: 'STRING' },
+            },
+            required: ['action', 'params', 'confidence'],
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as any;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof text !== 'string') {
+      throw new Error('Gemini returned no parseable text');
+    }
+
+    return validateExtraction(JSON.parse(text));
+  }
+}
+
+// Backup planner backend -- Cloudflare Workers AI, already bound as env.AI
+// for other Worker use, so it costs nothing extra to keep as the fallback
+// when Gemini is unset, erroring, or rate-limited.
 class CloudflareAIProvider implements AIProvider {
   // Listed in the Cloudflare Workers AI model catalog as a current text-generation model.
   private readonly model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -63,65 +173,53 @@ class CloudflareAIProvider implements AIProvider {
       throw new Error('Workers AI binding is not configured');
     }
 
-    const prompt = [
-      'You are the planner for Layer Runners, a bot that operates a GitHub-backed project on behalf of the user.',
-      'Read the request and decide which single action it maps to, and extract any parameters that action needs.',
-      'Available actions:',
-      ACTION_GUIDE,
-      'Return strict JSON only, with keys: action, params, confidence, clarifyMessage.',
-      'action must be exactly one of: ' + [...PLANNER_ACTIONS, 'help', 'clarify'].join(', ') + '.',
-      'params is an object containing only the fields relevant to the chosen action (omit fields you cannot determine from the request).',
-      'confidence is a number from 0 to 1 reflecting how sure you are action+params are correct.',
-      'clarifyMessage is required (a short string) only when action is "clarify"; omit it otherwise.',
-      `Request: ${JSON.stringify(input)}`,
-    ].join('\n');
-
     const result = await this.env.AI.run(this.model, {
       messages: [
         { role: 'system', content: 'You are a strict JSON planning assistant. You only ever respond with JSON, never prose.' },
-        { role: 'user', content: prompt },
+        { role: 'user', content: buildExtractionPrompt(input) },
       ],
       max_tokens: 400,
     });
 
-    return parseExtraction(result);
+    const text = extractText(result);
+    const jsonText = text.match(/\{[\s\S]*\}/)?.[0] ?? text;
+    return validateExtraction(JSON.parse(jsonText));
+  }
+}
+
+// Tries the primary backend; on any failure (unset, network error, bad
+// JSON, rate limit) falls back to the backup instead of throwing straight
+// through -- planner.ts's own try/catch is the last resort after this,
+// falling back further to the regex pipeline.
+class CompositeAIProvider implements AIProvider {
+  constructor(private readonly primary: AIProvider, private readonly backup?: AIProvider) {}
+
+  async extractPlan(input: string): Promise<AIPlanExtraction> {
+    try {
+      return await this.primary.extractPlan(input);
+    } catch (error) {
+      if (!this.backup) throw error;
+      console.warn('Primary AI provider failed; falling back to backup provider.', error);
+      return this.backup.extractPlan(input);
+    }
   }
 }
 
 export function createPlanProvider(env: Env): AIProvider {
-  if (!env.AI) {
-    return {
-      async extractPlan(): Promise<AIPlanExtraction> {
-        throw new Error('Workers AI binding is not configured');
-      },
-    };
+  const workersAI = env.AI ? new CloudflareAIProvider(env) : undefined;
+
+  if (env.GEMINI_API_KEY) {
+    return new CompositeAIProvider(new GeminiProvider(env.GEMINI_API_KEY), workersAI);
   }
 
-  return new CloudflareAIProvider(env);
-}
-
-function parseExtraction(result: unknown): AIPlanExtraction {
-  const text = extractText(result);
-  const jsonText = text.match(/\{[\s\S]*\}/)?.[0] ?? text;
-  const parsed = JSON.parse(jsonText) as Partial<AIPlanExtraction>;
-
-  const validActions: string[] = [...PLANNER_ACTIONS, 'help', 'clarify'];
-  if (!validActions.includes(parsed.action ?? '')) {
-    throw new Error('AI returned an unknown action');
+  if (workersAI) {
+    return workersAI;
   }
-
-  const confidence = Number(parsed.confidence);
-  if (!Number.isFinite(confidence)) {
-    throw new Error('AI returned invalid confidence');
-  }
-
-  const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
 
   return {
-    action: parsed.action as AIPlanExtraction['action'],
-    params,
-    confidence: Math.max(0, Math.min(1, confidence)),
-    clarifyMessage: typeof parsed.clarifyMessage === 'string' ? parsed.clarifyMessage : undefined,
+    async extractPlan(): Promise<AIPlanExtraction> {
+      throw new Error('No AI provider configured');
+    },
   };
 }
 

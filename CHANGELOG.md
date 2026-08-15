@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3] - 2026-08-15
+
+### Gemini as Primary Planner Backend
+
+#### Changed
+- 🤖 `src/services/ai-provider.ts` gains a `GeminiProvider` (Google's Generative Language API, called via plain `fetch` -- no SDK, keeps the Worker bundle small), pinned to `gemini-3.5-flash-lite` and using `responseSchema` to constrain output server-side rather than relying on prompt discipline. `createPlanProvider(env)` now builds a three-tier chain: Gemini (primary, when `GEMINI_API_KEY` is set) → Cloudflare Workers AI/Llama 3.3 (backup, unchanged from 0.4.2) → the regex pipeline in `planner.ts` (unchanged final fallback). Any Gemini failure (unset key, network error, bad model ID, malformed JSON) logs a warning and falls straight to Workers AI, so a Gemini outage or misconfiguration degrades to exactly the prior release's behavior, not a regression.
+
 ## [0.4.2] - 2026-08-15
 
 ### AI-Driven Planning
