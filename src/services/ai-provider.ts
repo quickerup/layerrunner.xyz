@@ -45,6 +45,11 @@ export interface AIProvider {
   // only restyles ones the caller already verified -- so a bad or missing
   // provider just means the caller keeps the raw templated text.
   rewriteConversationally(rawText: string): Promise<string>;
+  // Contract Studio's "Fix with AI": given Tolk source and the real
+  // compiler's error message, returns corrected source. The caller (never
+  // this method) is the one that decides whether the fix actually worked,
+  // by recompiling it -- this only ever proposes a source string.
+  fixTolkSource(source: string, errorMessage: string): Promise<string>;
 }
 
 const ACTION_GUIDE = [
@@ -94,6 +99,34 @@ function buildRewritePrompt(rawText: string): string {
     'Original response:',
     rawText,
   ].join('\n');
+}
+
+// Shared between every backend's fixTolkSource. Deliberately constrains the
+// model to the minimal fix for the reported error, not a rewrite -- the
+// caller recompiles the result for real before trusting it, but a smaller
+// diff is easier for a human to review and less likely to introduce new
+// behavior the user didn't ask for.
+function buildFixPrompt(source: string, errorMessage: string): string {
+  return [
+    'You are fixing a Tolk smart contract (Tolk is TON\'s smart contract language, a modern FunC successor).',
+    'The following source failed to compile. Make the MINIMAL change needed to fix the specific reported error --',
+    'do not refactor, rename, reformat, or change unrelated logic. Preserve the contract\'s existing intent.',
+    'Respond with ONLY the corrected, complete Tolk source code. No markdown code fences, no explanation, no commentary.',
+    '',
+    'Compiler error:',
+    errorMessage,
+    '',
+    'Source:',
+    source,
+  ].join('\n');
+}
+
+// Strips a leading/trailing ```tolk or ``` fence if the model added one
+// despite being told not to -- cheap insurance, not load-bearing.
+function stripCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/);
+  return fenced ? fenced[1] : trimmed;
 }
 
 // Validates/normalizes a provider's already-parsed JSON response into the
@@ -208,6 +241,31 @@ class GeminiProvider implements AIProvider {
 
     return text.trim();
   }
+
+  async fixTolkSource(source: string, errorMessage: string): Promise<string> {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: buildFixPrompt(source, errorMessage) }] }],
+        generationConfig: { temperature: 0.2 },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as any;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new Error('Gemini returned no parseable text');
+    }
+
+    return stripCodeFence(text);
+  }
 }
 
 // Backup planner backend -- Cloudflare Workers AI, already bound as env.AI
@@ -257,6 +315,27 @@ class CloudflareAIProvider implements AIProvider {
     }
     return text;
   }
+
+  async fixTolkSource(source: string, errorMessage: string): Promise<string> {
+    if (!this.env.AI) {
+      throw new Error('Workers AI binding is not configured');
+    }
+
+    const result = await this.env.AI.run(this.model, {
+      messages: [
+        { role: 'system', content: 'You fix smart contract compile errors with the smallest possible change. You respond with only source code, never commentary.' },
+        { role: 'user', content: buildFixPrompt(source, errorMessage) },
+      ],
+      max_tokens: 2000,
+      temperature: 0.2,
+    });
+
+    const text = extractText(result).trim();
+    if (!text) {
+      throw new Error('Workers AI returned no parseable text');
+    }
+    return stripCodeFence(text);
+  }
 }
 
 // Tries the primary backend; on any failure (unset, network error, bad
@@ -285,6 +364,16 @@ class CompositeAIProvider implements AIProvider {
       return this.backup.rewriteConversationally(rawText);
     }
   }
+
+  async fixTolkSource(source: string, errorMessage: string): Promise<string> {
+    try {
+      return await this.primary.fixTolkSource(source, errorMessage);
+    } catch (error) {
+      if (!this.backup) throw error;
+      console.warn('Primary AI provider failed; falling back to backup provider.', error);
+      return this.backup.fixTolkSource(source, errorMessage);
+    }
+  }
 }
 
 export function createPlanProvider(env: Env): AIProvider {
@@ -303,6 +392,9 @@ export function createPlanProvider(env: Env): AIProvider {
       throw new Error('No AI provider configured');
     },
     async rewriteConversationally(): Promise<string> {
+      throw new Error('No AI provider configured');
+    },
+    async fixTolkSource(): Promise<string> {
       throw new Error('No AI provider configured');
     },
   };

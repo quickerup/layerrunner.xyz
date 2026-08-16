@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-08-16
+
+### Wallet-signed Contract Studio
+
+#### Added
+- 🔐 TON wallet sign-in: `src/core/ton-proof.ts` implements TonConnect's `ton_proof` verification (reconstructs the exact signed message from workchain/address hash/domain/timestamp/payload, checks it with `tweetnacl`'s ed25519 verify against the wallet's own public key) with zero Node built-ins or `@ton/core`, so it bundles safely into the Worker without `nodejs_compat`. `GET /auth/ton/payload` mints a short-lived one-time payload (stored in the same HttpOnly-cookie pattern already used for OAuth state); `POST /auth/ton/callback` verifies the returned proof and mints a session under a new `ton:<address>` identity (`src/core/identity.ts`), same as GitHub/Google today. `lib/components/wallet-login.tsx` adds a "Continue with wallet" option to `/login`.
+- 🌐 Mainnet/testnet is read directly off the connected wallet's `chain` (`lib/ton-network.ts`), never a manual toggle. `src/services/ton.ts`'s `TonCenterService` now takes a `network` and points at the matching TonCenter v3 host + API key (`TONCENTER_API_KEY` for mainnet, new `TONCENTER_API_KEY_TESTNET` for testnet), and gains `runGetMethod` for read calls.
+- 🛠️ `/contracts` ("Contract Studio"): paste Tolk source and compile it fully client-side via `@ton/tolk-js`'s WASM compiler (dynamically imported, no server round trip, no sign-in required just to compile). On a compile error, "Fix with AI" sends the source + error to a new session-gated `POST /api/contracts/fix` (`fixTolkSource` added to the `AIProvider` chain, same Gemini→Workers-AI fallback used for chat), and the suggested fix is always re-compiled for real client-side before being trusted -- the AI's fix is never accepted on its own say-so.
+- 🚀 Deploy the compiled contract with a wallet-signed transaction (same `sendTransaction` pattern as `admin-deploy`), then track it under the signed-in identity (`src/core/contracts.ts`, riding the `UserLedger` DO's existing generic key/value store -- no new Durable Object). Tracked contracts can be read-tested (`POST /api/contracts/call` → TonCenter `runGetMethod`, kept server-side so the API key never reaches the client) and interacted with (wallet-signed write transactions, op + comment, built and sent entirely client-side).
+
 ## [0.4.4] - 2026-08-15
 
 ### Conversational Response Rewriting

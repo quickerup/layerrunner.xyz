@@ -28,6 +28,15 @@ export function googleIdentity(subject: string): string {
   return `google:${subject}`;
 }
 
+// `rawAddress` is the wallet's raw `wc:hash` address form (not the
+// user-friendly EQ.../UQ... form), which TonConnect's proof payload signs
+// over -- stable across bounceable/testnet-flag formatting differences and
+// never collides with the numeric Telegram identity or the gh:/google:
+// prefixes above.
+export function tonIdentity(rawAddress: string): string {
+  return `ton:${rawAddress}`;
+}
+
 export function ledgerStub(env: Env, identity: string): DurableObjectStub {
   const id = env.LEDGER.idFromName(identity);
   return env.LEDGER.get(id);

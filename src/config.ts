@@ -21,7 +21,11 @@ export interface Env {
   JETTON_ADDRESS?: string;
   APP_HEALTH_URL?: string;
   ENVIRONMENT?: string;
+  // Mainnet TonCenter key (existing, unchanged meaning). Contract Studio
+  // (services/ton.ts) also accepts a testnet key below -- every TonCenter
+  // call is network-scoped to whichever chain the caller's wallet is on.
   TONCENTER_API_KEY?: string;
+  TONCENTER_API_KEY_TESTNET?: string;
   // Primary planner backend (services/ai-provider.ts) -- when set, plan
   // extraction tries Gemini first and falls back to the Workers AI binding
   // (still configured below) on any failure, then to the regex pipeline.

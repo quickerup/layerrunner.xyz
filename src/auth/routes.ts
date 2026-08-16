@@ -6,7 +6,7 @@
  */
 
 import { Env } from '../config';
-import { githubIdentity, googleIdentity, telegramIdentity } from '../core/identity';
+import { githubIdentity, googleIdentity, telegramIdentity, tonIdentity } from '../core/identity';
 import { ensureProfile } from '../core/chat-engine';
 import { getBalance } from '../core/metering';
 import { formatLyr } from '../services/ton';
@@ -18,6 +18,7 @@ import {
   verifySession,
 } from '../core/session';
 import { TelegramLoginData, verifyTelegramLogin } from '../core/telegram-login';
+import { buildProofPayload, TonAccountInfo, TonProofReply, verifyTonProof } from '../core/ton-proof';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -27,6 +28,7 @@ const GOOGLE_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const GOOGLE_OAUTH_STATE_COOKIE = 'lr_google_oauth_state';
+const TON_PROOF_PAYLOAD_COOKIE = 'lr_ton_payload';
 
 interface GitHubTokenResponse {
   access_token?: string;
@@ -271,6 +273,72 @@ export async function handleGoogleAuthCallback(request: Request, env: Env): Prom
   headers.append('Set-Cookie', sessionCookieHeader(token));
   headers.append('Set-Cookie', clearOAuthStateCookieHeader(GOOGLE_OAUTH_STATE_COOKIE));
   return new Response(null, { status: 302, headers });
+}
+
+function tonProofExpectedDomain(request: Request): string {
+  return new URL(request.url).hostname.replace(/^www\./, '');
+}
+
+export async function handleTonAuthPayload(request: Request, env: Env): Promise<Response> {
+  if (!env.SESSION_SIGNING_KEY) {
+    return json({ ok: false, error: 'Wallet login is not configured yet.' }, { status: 503 });
+  }
+
+  const payload = buildProofPayload();
+  return json(
+    { ok: true, payload },
+    { status: 200, headers: { 'Set-Cookie': oauthStateCookieHeader(TON_PROOF_PAYLOAD_COOKIE, payload) } }
+  );
+}
+
+interface TonAuthCallbackBody {
+  proof?: TonProofReply;
+  account?: TonAccountInfo;
+}
+
+export async function handleTonAuthCallback(request: Request, env: Env): Promise<Response> {
+  if (!env.SESSION_SIGNING_KEY) {
+    return json({ ok: false, error: 'Wallet login is not configured yet.' }, { status: 503 });
+  }
+
+  let body: TonAuthCallbackBody;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'Invalid request body' }, { status: 400 });
+  }
+
+  if (!body.proof || !body.account) {
+    return json({ ok: false, error: 'Missing wallet proof.' }, { status: 400 });
+  }
+
+  const expectedPayload = readCookie(request, TON_PROOF_PAYLOAD_COOKIE);
+  if (!expectedPayload) {
+    return json(
+      { ok: false, error: 'Wallet sign-in expired — please try connecting again.' },
+      { status: 400, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(TON_PROOF_PAYLOAD_COOKIE) } }
+    );
+  }
+
+  const verification = await verifyTonProof(
+    body.proof,
+    body.account,
+    tonProofExpectedDomain(request),
+    expectedPayload
+  );
+
+  if (!verification.ok || !verification.rawAddress) {
+    return json(
+      { ok: false, error: verification.reason ?? 'Could not verify wallet signature.' },
+      { status: 401, headers: { 'Set-Cookie': clearOAuthStateCookieHeader(TON_PROOF_PAYLOAD_COOKIE) } }
+    );
+  }
+
+  const token = await mintSession(env, tonIdentity(verification.rawAddress), 'ton');
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  headers.append('Set-Cookie', sessionCookieHeader(token));
+  headers.append('Set-Cookie', clearOAuthStateCookieHeader(TON_PROOF_PAYLOAD_COOKIE));
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
 }
 
 export async function handleGetSession(request: Request, env: Env): Promise<Response> {

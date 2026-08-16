@@ -71,6 +71,8 @@ export class UserLedger {
       await this.state.storage.delete('pendingWallet');
       return json({ ok: true });
     }
+    if (url.pathname === '/contracts' && request.method === 'GET') return this.getStored('contracts');
+    if (url.pathname === '/contracts' && request.method === 'POST') return this.setStored('contracts', request);
 
     return new Response('not found', { status: 404 });
   }

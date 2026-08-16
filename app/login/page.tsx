@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WalletLogin } from "../../lib/components/wallet-login";
 
 const BOT_USERNAME = "layerrunnersbot";
 
@@ -72,8 +73,8 @@ export default function LoginPage() {
         <h2>Sign in to Layer Runners</h2>
         <p>
           Telegram resolves to the exact same account as the bot — if you&apos;ve already used @{BOT_USERNAME}, your
-          balance, profile, and linked wallet carry over immediately. GitHub and Google create separate web identities with
-          profile-only login scopes; repo access still requires the in-chat connect flow.
+          balance, profile, and linked wallet carry over immediately. GitHub, Google, and TON wallet sign-in each create
+          separate web identities; repo access still requires the in-chat connect flow.
         </p>
 
         {state.kind === "signed-in" ? (
@@ -91,6 +92,8 @@ export default function LoginPage() {
             <a className="button secondary" href="/auth/google">
               Continue with Google
             </a>
+            <div className="login-divider">or connect a TON wallet</div>
+            <WalletLogin onSignedIn={checkSession} />
             <div className="login-divider">or use your existing bot account</div>
             <div id="telegram-login-widget" />
           </div>

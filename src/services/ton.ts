@@ -9,6 +9,7 @@
  */
 
 import { Env } from '../config';
+import { TonNetwork } from '../../lib/ton-network';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,10 @@ export const LYR_TOKEN = {
 
 export const NANO_FACTOR = BigInt(1_000_000_000);
 
-const TONCENTER_BASE = 'https://toncenter.com/api/v3';
+const TONCENTER_BASE: Record<TonNetwork, string> = {
+  mainnet: 'https://toncenter.com/api/v3',
+  testnet: 'https://testnet.toncenter.com/api/v3',
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,11 +75,12 @@ export interface JettonMasterInfo {
 // ─── TON Center Service ───────────────────────────────────────────────────────
 
 export class TonCenterService {
-  private readonly baseUrl = TONCENTER_BASE;
+  private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, network: TonNetwork = 'mainnet') {
     this.apiKey = apiKey;
+    this.baseUrl = TONCENTER_BASE[network];
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
@@ -187,15 +192,47 @@ export class TonCenterService {
     if (BigInt(transfer.amount) < expectedAmountNano) return null;
     return transfer;
   }
+
+  /**
+   * Runs a read-only get-method on any contract (Contract Studio's "test"
+   * panel). `stack` items use TonCenter's own tuple encoding, e.g.
+   * {type: 'num', value: '123'} or {type: 'slice', value: '<base64 boc>'}.
+   */
+  async runGetMethod(
+    address: string,
+    method: string,
+    stack: Array<{ type: string; value: string }> = []
+  ): Promise<RunGetMethodResult> {
+    const url = new URL(`${this.baseUrl}/runGetMethod`);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ address, method, stack }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`TON Center API error ${res.status}: ${text}`);
+    }
+    return res.json() as Promise<RunGetMethodResult>;
+  }
+}
+
+export interface RunGetMethodResult {
+  gas_used: number;
+  exit_code: number;
+  stack: Array<{ type: string; value?: string }>;
 }
 
 // ─── Convenience helpers ──────────────────────────────────────────────────────
 
 /**
- * Create a TonCenterService from a Cloudflare Worker Env.
+ * Create a TonCenterService from a Cloudflare Worker Env, scoped to the
+ * given network (defaults to mainnet -- every existing caller before
+ * Contract Studio only ever dealt with the mainnet LYR jetton).
  */
-export function initTonCenterService(env: Env): TonCenterService {
-  return new TonCenterService(env.TONCENTER_API_KEY);
+export function initTonCenterService(env: Env, network: TonNetwork = 'mainnet'): TonCenterService {
+  const apiKey = network === 'testnet' ? env.TONCENTER_API_KEY_TESTNET : env.TONCENTER_API_KEY;
+  return new TonCenterService(apiKey, network);
 }
 
 /**

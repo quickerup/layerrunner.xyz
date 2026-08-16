@@ -15,7 +15,7 @@ export const SESSION_COOKIE_NAME = 'lr_session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const REFRESH_THRESHOLD_MS = SESSION_TTL_MS / 2; // reissue once past half-life
 
-export type LoginProvider = 'telegram' | 'github' | 'google' | 'email';
+export type LoginProvider = 'telegram' | 'github' | 'google' | 'email' | 'ton';
 
 export interface SessionPayload {
   identity: string;
