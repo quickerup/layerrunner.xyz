@@ -146,6 +146,21 @@ export async function handleMessage(env: Env, message: TelegramMessage): Promise
       return;
     }
 
+    // Telegram itself needs no separate login -- this chat already IS your
+    // identity. The web /login page is for the *other* identities (GitHub,
+    // Google, TON wallet) that don't exist here, so route the button there
+    // instead of letting "/login" fall through to the planner as an
+    // unrecognized action.
+    if (/^\s*\/login\b/.test(text)) {
+      await sendTelegramMessageWithButtons(
+        env,
+        chat.id,
+        "You're already signed in here — this chat is your account. `/login` is for the website, if you also want to connect GitHub, Google, or a TON wallet as a separate web identity:",
+        [[{ text: 'Sign in on the website', url: 'https://layerrunners.xyz/login' }]],
+      );
+      return;
+    }
+
     const response = await runChatEngine(env, identity, text, { telegramChatId: chat.id });
 
     if (response.kind === 'approval') {
